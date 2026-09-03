@@ -29,7 +29,7 @@ export const ESCALATION_RULES = [
   { id: 7, requirement: "Lender/Client Name Change", ruleText: "7. Lender/Client Name Change: If the lender/client name is changed in the report (e.g., from “Easy Street Capital” to “National Loan Funder”)." },
   { id: 8, requirement: "Appraiser Fee Mismatch", ruleText: "8. Appraiser Fee Mismatch: If the appraiser’s fee in the report does not match the engagement letter." },
   { id: 9, requirement: "Neighborhood Condition Comment", ruleText: "9. Neighborhood Condition Comment: If the Neighborhood section comment contains potentially negative words like \"*average* condition\"." },
-  { id: 10, requirement: "Value vs. Price", ruleText: "10. Value vs. Price: If the final value is higher than list price, purchase price, and prior sale price." },
+  { id: 10, requirement: "Value vs. Price", ruleText: "10. Value vs. Price: If the final value is 10% lower than list price, purchase price, and prior sale price." },
   { id: 11, requirement: "1004D Mismatch", ruleText: "11. 1004D Mismatch: If order form shows ‘1004D Final Inspection/Appraisal Update’ but report is only one of them, or vice-versa." },
   { id: 12, requirement: "Loan/Appraisal Type Conflict", ruleText: "12. Loan/Appraisal Type Conflict: If order form loan type (e.g., USDA) conflicts with appraisal type (e.g., 1004 FHA)." },
   { id: 13, requirement: "Illegal Use", ruleText: "13. Illegal Use: If the property is marked as 'Illegal'." },
@@ -38,7 +38,7 @@ export const ESCALATION_RULES = [
   { id: 16, requirement: "Value vs. Unadjusted Sales Price", ruleText: "16. Value vs. Unadjusted Sales Price: If final value is more than 10% higher than the unadjusted sales price." },
   { id: 17, requirement: "Drastic Grid Adjustments", ruleText: "17. Drastic Grid Adjustments: If sales grid adjustments are drastic." },
   { id: 18, requirement: "Commercial Location in Sales Grid", ruleText: "18. Commercial Location in Sales Grid: If a comparable's location is marked \"Commercial\"." },
-  { id: 19, requirement: "Value Higher than Purchase Price", ruleText: "19. Value Higher than Purchase Price: If purchase price is higher than the appraised value." },
+  { id: 19, requirement: "Value Higher than Purchase Price", ruleText: "19. Value Higher than Purchase Price: If purchase price is 10% higher than the appraised value." },
   { id: 20, requirement: "Value Increase Since Prior Sale", ruleText: "20. Value Increase Since Prior Sale: If there's an increase in value since the subject's prior sale." },
   { id: 21, requirement: "Duplicate Addresses", ruleText: "21. Duplicate Addresses: If the subject address is the same as any comparable sale or rental comparable." },
   { id: 22, requirement: "Highest and Best Use 'NO'", ruleText: "22. Highest and Best Use 'NO': If 'Highest and best use' is marked 'NO'." },
@@ -66,7 +66,7 @@ Escalation Rules:
 7. Lender/Client Name Change: If the lender/client name is changed in the report (e.g., from “Easy Street Capital” to “National Loan Funder”).
 8. Appraiser Fee Mismatch: If the appraiser’s fee in the report does not match the engagement letter.
 9. Neighborhood Condition Comment: If the Neighborhood section comment contains potentially negative words like "*average* condition".
-10. Value vs. Price: If the final value is lower than list price, purchase price.
+10. Value vs. Price: If the final value is 10% lower than list price, purchase price.
 11. 1004D Mismatch: If order form shows ‘1004D Final Inspection/Appraisal Update’ but report is only one of them, or vice-versa.
 12. Loan/Appraisal Type Conflict: If order form loan type (e.g., USDA) conflicts with appraisal type (e.g., 1004 FHA).
 13. Illegal Use: If the property is marked as 'Illegal'.
@@ -75,7 +75,7 @@ Escalation Rules:
 16. Value vs. Unadjusted Sales Price: If final value is more than 10% higher than the unadjusted sales price.
 17. Drastic Grid Adjustments: If sales grid adjustments are drastic.
 18. Commercial Location in Sales Grid: If a comparable's location is marked "Commercial".
-19. Value Higher than Purchase Price: If purchase price is higher than the appraised value.
+19. Value Higher than Purchase Price: If purchase price is 10% higher than the appraised value.
 20. Value Increase Since Prior Sale: If there's an increase in value since the subject's prior sale.
 21. Duplicate Addresses: If the subject address is the same as any comparable sale or rental comparable.
 22. Highest and Best Use 'NO': If 'Highest and best use' is marked 'NO'.
