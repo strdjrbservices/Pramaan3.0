@@ -16,7 +16,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-APIKEY = "AIzaSyAAxZzLZSITzV685yb34ZtWHGTjx7vR6-s"
+APIKEY = ""
 
 SECRET_KEY = "django-insecure-zx9!0$38f(!jbn(7=-m-4gc)ixt8lq&-37=mau-qikbw+kkm5+"
 DEBUG = True
