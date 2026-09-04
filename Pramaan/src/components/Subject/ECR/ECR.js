@@ -39,9 +39,13 @@ import {
   ecrSiteFields,
   ecrImprovementsFields,
   ecrMarketTrendsFields,
-  ecrSalesComparisonFields,
+  ecrSalesGridAttributes,
+  ecrSalesGridNarrativeFields,
+  ecrComparableSalesList,
   ecrAnticipatedSalesPriceFields,
-  ecrCertificationFields
+  ecrCertificationFields,
+  stripPrefix,
+  normalize
 } from './ecrFields';
 
 const ECR = ({
@@ -218,14 +222,6 @@ const ECR = ({
     }
   };
 
-  const normalize = (val) => {
-    if (val === undefined || val === null) return '';
-    if (typeof val === 'object') {
-      return JSON.stringify(val);
-    }
-    return String(val).trim().toLowerCase().replace(/[\s,$/]/g, '');
-  };
-
   const comparisonRows = useMemo(() => {
     const rows = [];
 
@@ -236,8 +232,11 @@ const ECR = ({
         const val1 = obj1?.[field] !== undefined ? obj1[field] : (data?.[field] !== undefined ? data[field] : '');
         const val2 = obj2?.[field] !== undefined ? obj2[field] : (file2Data?.[field] !== undefined ? file2Data[field] : '');
 
-        const norm1 = normalize(val1);
-        const norm2 = normalize(val2);
+        const cleanVal1 = stripPrefix(val1, field);
+        const cleanVal2 = stripPrefix(val2, field);
+
+        const norm1 = normalize(val1, field);
+        const norm2 = normalize(val2, field);
 
         let status = 'MATCH';
         if (!norm1 && !norm2) {
@@ -255,8 +254,10 @@ const ECR = ({
         rows.push({
           section: sectionTitle,
           field,
-          value1: val1 !== undefined && val1 !== null ? String(val1) : '',
-          value2: val2 !== undefined && val2 !== null ? String(val2) : '',
+          value1: cleanVal1 !== undefined && cleanVal1 !== null ? String(cleanVal1) : '',
+          value2: cleanVal2 !== undefined && cleanVal2 !== null ? String(cleanVal2) : '',
+          raw1: val1,
+          raw2: val2,
           status
         });
       });
@@ -268,7 +269,43 @@ const ECR = ({
     addSectionFields('Site', ecrSiteFields, file1Data?.SITE || file1Data, file2Data?.SITE || file2Data);
     addSectionFields('Description of Improvements', ecrImprovementsFields, file1Data?.IMPROVEMENTS || file1Data, file2Data?.IMPROVEMENTS || file2Data);
     addSectionFields('Market Trends Analysis', ecrMarketTrendsFields, file1Data?.MARKET_TRENDS || file1Data, file2Data?.MARKET_TRENDS || file2Data);
-    addSectionFields('Sales Comparison Analysis', ecrSalesComparisonFields, file1Data?.SALES_COMPARISON || file1Data, file2Data?.SALES_COMPARISON || file2Data);
+
+    // Sales Comparison Grid Analysis (Subject + Comparable Sales #1 to #6 + Narrative)
+    const salesComp1 = file1Data?.SALES_COMPARISON || file1Data?.SALES_GRID || file1Data || {};
+    const salesComp2 = file2Data?.SALES_COMPARISON || file2Data?.SALES_GRID || file2Data || {};
+
+    // 1. Subject Grid Attributes
+    addSectionFields(
+      'Sales Comparison - Subject',
+      ecrSalesGridAttributes,
+      salesComp1?.Subject || salesComp1 || {},
+      salesComp2?.Subject || salesComp2 || {}
+    );
+
+    // 2. Comparable Sales #1 to #6 Grid Attributes
+    ecrComparableSalesList.forEach((compKey, idx) => {
+      const comp1 = salesComp1?.[compKey] || {};
+      const comp2 = salesComp2?.[compKey] || {};
+      const hasData = Object.values(comp1).some((v) => v && String(v).trim() !== '') ||
+                      Object.values(comp2).some((v) => v && String(v).trim() !== '');
+      if (idx < 3 || hasData) {
+        addSectionFields(
+          `Sales Comparison - Comparable Sale #${idx + 1}`,
+          ecrSalesGridAttributes,
+          comp1,
+          comp2
+        );
+      }
+    });
+
+    // 3. Narrative & Comments
+    addSectionFields(
+      'Sales Comparison - Narrative & Comments',
+      ecrSalesGridNarrativeFields,
+      salesComp1,
+      salesComp2
+    );
+
     addSectionFields('Anticipated Sales Price', ecrAnticipatedSalesPriceFields, file1Data?.ANTICIPATED_SALES_PRICE || file1Data, file2Data?.ANTICIPATED_SALES_PRICE || file2Data);
     addSectionFields('Appraiser & Certification', ecrCertificationFields, file1Data?.CERTIFICATION || file1Data, file2Data?.CERTIFICATION || file2Data);
 
@@ -295,12 +332,128 @@ const ECR = ({
     'Site': 'SITE',
     'Description of Improvements': 'IMPROVEMENTS',
     'Market Trends Analysis': 'MARKET_TRENDS',
-    'Sales Comparison Analysis': 'SALES_COMPARISON',
     'Anticipated Sales Price': 'ANTICIPATED_SALES_PRICE',
     'Appraiser & Certification': 'CERTIFICATION'
   };
 
   const handleComparisonFieldChange = (section, field, fileType, newValue) => {
+    // 1. Handle Sales Grid Subject
+    if (section === 'Sales Comparison - Subject') {
+      if (fileType === 1) {
+        setFile1Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            Subject: {
+              ...(prevGrid.Subject || {}),
+              [field]: newValue
+            }
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          return next;
+        });
+        if (handleDataChange) {
+          handleDataChange(['SALES_COMPARISON', 'Subject', field], newValue);
+        }
+      } else if (fileType === 2) {
+        setFile2Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            Subject: {
+              ...(prevGrid.Subject || {}),
+              [field]: newValue
+            }
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          return next;
+        });
+      }
+      return;
+    }
+
+    // 2. Handle Sales Grid Comparable Sales #1 to #6
+    const compMatch = section.match(/Sales Comparison - Comparable Sale #(\d+)/i);
+    if (compMatch) {
+      const compNum = compMatch[1];
+      const compKey = `COMPARABLE SALE #${compNum}`;
+      if (fileType === 1) {
+        setFile1Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            [compKey]: {
+              ...(prevGrid[compKey] || {}),
+              [field]: newValue
+            }
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          return next;
+        });
+        if (handleDataChange) {
+          handleDataChange(['SALES_COMPARISON', compKey, field], newValue);
+        }
+      } else if (fileType === 2) {
+        setFile2Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            [compKey]: {
+              ...(prevGrid[compKey] || {}),
+              [field]: newValue
+            }
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          return next;
+        });
+      }
+      return;
+    }
+
+    // 3. Handle Sales Comparison Narrative & Comments
+    if (section === 'Sales Comparison - Narrative & Comments' || section === 'Sales Comparison Analysis') {
+      if (fileType === 1) {
+        setFile1Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            [field]: newValue
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          next[field] = newValue;
+          return next;
+        });
+        if (handleDataChange) {
+          handleDataChange(['SALES_COMPARISON', field], newValue);
+        }
+      } else if (fileType === 2) {
+        setFile2Data((prev) => {
+          const next = { ...prev };
+          const prevGrid = next.SALES_COMPARISON || next.SALES_GRID || {};
+          const nextGrid = {
+            ...prevGrid,
+            [field]: newValue
+          };
+          next.SALES_COMPARISON = nextGrid;
+          next.SALES_GRID = nextGrid;
+          next[field] = newValue;
+          return next;
+        });
+      }
+      return;
+    }
+
+    // 4. Standard Form Sections
     const cat = sectionCategoryMap[section];
     if (fileType === 1) {
       setFile1Data((prev) => {
@@ -750,6 +903,9 @@ const ECR = ({
           <ECRSalesGridTable
             id="sales-comparison-section"
             data={file1Data}
+            comparisonData={file2Data}
+            file1Name={file1?.name ? `PDF 1 (${file1.name})` : 'PDF 1'}
+            file2Name={file2?.name ? `PDF 2 (${file2.name})` : 'PDF 2'}
             allData={allData}
             extractionAttempted={extractionAttempted}
             handleDataChange={handleDataChange}

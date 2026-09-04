@@ -569,10 +569,10 @@ def extract_page_1_fields(page, full_doc_text=""):
         ("Tenant", ["Tenant"], (90, 120)),
         ("Vacant", ["Vacant"], (130, 165))
     ]
-    subject["Occupant"] = extract_choice_from_row(words, y_occ, occ_opts, 25, 200, default_val="Owner", y_band=band_occ)
+    subject["Occupant"] = extract_choice_from_row(words, y_occ, occ_opts, 25, 200, default_val="", y_band=band_occ) or ""
 
     subject["Special Assessments $"] = get_val(285, y_occ - 4, 400, y_occ + 10)
-    pud_check = extract_choice_from_row(words, y_occ, [("Yes", ["PUD"], (390, 425))], 350, 450, default_val=None, y_band=band_occ)
+    pud_check = extract_choice_from_row(words, y_occ, [("Yes", ["PUD"], (390, 425))], 350, 450, default_val="", y_band=band_occ)
     subject["PUD"] = "Yes" if (pud_check == "Yes" or check_mark_in_box(words, 390, y_occ - 6, 425, y_occ + 8)) else "No"
     subject["HOA $"] = get_val(440, y_occ - 4, 510, y_occ + 10)
 
@@ -583,7 +583,7 @@ def extract_page_1_fields(page, full_doc_text=""):
         ("Leasehold", ["Leasehold"], (155, 190)),
         ("Other", ["Other"], (215, 250))
     ]
-    subject["Property Rights Appraised"] = extract_choice_from_row(words, y_pr, pr_opts, 25, 300, default_val="Fee Simple", y_band=band_pr)
+    subject["Property Rights Appraised"] = extract_choice_from_row(words, y_pr, pr_opts, 25, 300, default_val="", y_band=band_pr) or ""
 
     # Assignment Type with strict vertical band
     band_asgn = ((y_pr + y_asgn) / 2.0, (y_asgn + y_lender) / 2.0)
@@ -592,7 +592,7 @@ def extract_page_1_fields(page, full_doc_text=""):
         ("Refinance Transaction", ["Refinance"], (155, 190)),
         ("Other", ["Other"], (250, 280))
     ]
-    subject["Assignment Type"] = extract_choice_from_row(words, y_asgn, asgn_opts, 25, 350, default_val="Purchase Transaction", y_band=band_asgn)
+    subject["Assignment Type"] = extract_choice_from_row(words, y_asgn, asgn_opts, 25, 350, default_val="", y_band=band_asgn) or ""
 
     subject["Lender/Client"] = get_val(65, y_lender - 4, 230, y_lender + 10)
     subject["Address (Lender/Client)"] = get_val(230, y_lender - 4, 580, y_lender + 10)
@@ -604,19 +604,19 @@ def extract_page_1_fields(page, full_doc_text=""):
         ("No", ["No"], (520, 545))
     ]
     subject["Offered for Sale in Last 12 Months"] = extract_choice_from_row(
-        words, y_offered, offered_opts, 450, 580, default_val="No", y_band=band_offered
-    )
+        words, y_offered, offered_opts, 450, 580, default_val="", y_band=band_offered
+    ) or ""
 
     subject["Report data source(s) used, offering price(s), and date(s)"] = get_val(28, y_offered + 8, 580, y_offered + 38, strip_labels=False).replace("Report data source(s) used, offering price(s), and date(s).", "").strip()
 
     exp_m = re.search(r'(exposure time[^\.\n]+[\.\n]|marketing time[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
-    subject["Exposure comment"] = exp_m.group(1).strip() if exp_m else "Marketing time is estimated at 30-90 days."
+    subject["Exposure comment"] = exp_m.group(1).strip() if exp_m else ""
 
     prior_m = re.search(r'(performed no services[^\.\n]+[\.\n]|within the (?:three|3) year period[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
-    subject["Prior service comment"] = prior_m.group(1).strip() if prior_m else "No prior services performed within 3 years."
+    subject["Prior service comment"] = prior_m.group(1).strip() if prior_m else ""
 
     ansi_m = re.search(r'(ANSI[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
-    subject["ANSI"] = ansi_m.group(1).strip() if ansi_m else "ANSI Z765-2021 compliant"
+    subject["ANSI"] = ansi_m.group(1).strip() if ansi_m else ""
 
     # CONTRACT
     y_contract = find_label_y(words, "Contract", max_x=120) or 220.0
@@ -627,18 +627,22 @@ def extract_page_1_fields(page, full_doc_text=""):
     y_if_yes = find_label_y(words, "describe the items", max_x=120) or (y_fa + 12.0)
     y_note = find_label_y(words, "Proration", max_x=120) or (y_if_yes + 20.0)
 
-    contract["I did did not analyze the contract for sale for the subject purchase transaction. Explain the results of the analysis of the contract for sale or why the analysis was not performed."] = "did: " + get_val(28, y_did + 6, 580, y_sp - 2, strip_labels=False)
+    did_choice = extract_choice_from_row(
+        words, y_did, [("did not", ["did not", "not"], (65, 110)), ("did", ["did"], (35, 65))], 25, 140, default_val=""
+    )
+    did_expl = get_val(28, y_did + 6, 580, y_sp - 2, strip_labels=False)
+    contract["I did did not analyze the contract for sale for the subject purchase transaction. Explain the results of the analysis of the contract for sale or why the analysis was not performed."] = f"{did_choice}: {did_expl}".strip(": ") if did_choice else did_expl
     contract["Contract Price $"] = get_val(80, y_sp - 4, 210, y_sp + 10)
     contract["Date of Contract"] = get_val(260, y_sp - 4, 380, y_sp + 10)
 
     contract["Is property seller owner of public record?"] = extract_choice_from_row(
-        words, y_owner, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val="Yes"
-    )
+        words, y_owner, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val=""
+    ) or ""
     contract["Data Source(s) (Contract)"] = get_val(230, y_owner - 4, 450, y_owner + 10)
 
     contract["Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?"] = extract_choice_from_row(
-        words, y_fa, [("Yes", ["Yes"], (515, 545)), ("No", ["No"], (545, 575))], 500, 580, default_val="No"
-    )
+        words, y_fa, [("Yes", ["Yes"], (515, 545)), ("No", ["No"], (545, 575))], 500, 580, default_val=""
+    ) or ""
 
     if_yes_txt = get_val(28, y_if_yes + 8, 580, y_note - 2, strip_labels=False)
     contract["If Yes, report the total dollar amount and describe the items to be paid"] = if_yes_txt
@@ -688,12 +692,12 @@ def extract_page_1_fields(page, full_doc_text=""):
     band_built = ((y_loc + y_built) / 2.0, (y_built + y_growth) / 2.0)
     band_growth = ((y_built + y_growth) / 2.0, y_growth + 8.0)
 
-    neighborhood["Location"] = extract_choice_from_row(words, y_loc, loc_opts, 25, 190, default_val="Suburban", y_band=band_loc)
-    neighborhood["Built-Up"] = extract_choice_from_row(words, y_built, built_opts, 25, 190, default_val="25-75%", y_band=band_built)
-    neighborhood["Growth"] = extract_choice_from_row(words, y_growth, growth_opts, 25, 190, default_val="Stable", y_band=band_growth)
-    neighborhood["Property Values"] = extract_choice_from_row(words, y_pv, pv_opts, 200, 420, default_val="Stable", y_band=band_loc)
-    neighborhood["Demand/Supply"] = extract_choice_from_row(words, y_ds, ds_opts, 200, 420, default_val="In Balance", y_band=band_built)
-    neighborhood["Marketing Time"] = extract_choice_from_row(words, y_mt, mt_opts, 200, 420, default_val="3-6 mths", y_band=band_growth)
+    neighborhood["Location"] = extract_choice_from_row(words, y_loc, loc_opts, 25, 190, default_val="", y_band=band_loc) or ""
+    neighborhood["Built-Up"] = extract_choice_from_row(words, y_built, built_opts, 25, 190, default_val="", y_band=band_built) or ""
+    neighborhood["Growth"] = extract_choice_from_row(words, y_growth, growth_opts, 25, 190, default_val="", y_band=band_growth) or ""
+    neighborhood["Property Values"] = extract_choice_from_row(words, y_pv, pv_opts, 200, 420, default_val="", y_band=band_loc) or ""
+    neighborhood["Demand/Supply"] = extract_choice_from_row(words, y_ds, ds_opts, 200, 420, default_val="", y_band=band_built) or ""
+    neighborhood["Marketing Time"] = extract_choice_from_row(words, y_mt, mt_opts, 200, 420, default_val="", y_band=band_growth) or ""
 
     y_bound = None
     for w in words:
@@ -728,26 +732,30 @@ def extract_page_1_fields(page, full_doc_text=""):
     p_high = get_val(415, y_bound - 4, 445, y_bound + 8, strip_labels=False)
     p_pred = get_val(415, y_bound + 8, 445, y_bound + 20, strip_labels=False)
     if p_low or p_high or p_pred:
-        neighborhood["one unit housing price(high,low,pred)"] = f"Low: ${p_low or '55'}, High: ${p_high or '499'}, Pred: ${p_pred or '247'}"
+        neighborhood["one unit housing price(high,low,pred)"] = f"Low: ${p_low}, High: ${p_high}, Pred: ${p_pred}".replace("$$", "$").strip()
     else:
-        neighborhood["one unit housing price(high,low,pred)"] = "Low: $55, High: $499, Pred: $247"
+        neighborhood["one unit housing price(high,low,pred)"] = ""
 
     a_low = get_val(465, y_bound - 18, 490, y_bound - 4, strip_labels=False)
     a_high = get_val(465, y_bound - 4, 490, y_bound + 8, strip_labels=False)
     a_pred = get_val(465, y_bound + 8, 490, y_bound + 20, strip_labels=False)
     if a_low or a_high or a_pred:
-        neighborhood["one unit housing age(high,low,pred)"] = f"Low: {a_low or '0'} yrs, High: {a_high or '120'} yrs, Pred: {a_pred or '55'} yrs"
+        neighborhood["one unit housing age(high,low,pred)"] = f"Low: {a_low} yrs, High: {a_high} yrs, Pred: {a_pred} yrs".strip()
     else:
-        neighborhood["one unit housing age(high,low,pred)"] = "Low: 0 yrs, High: 120 yrs, Pred: 55 yrs"
+        neighborhood["one unit housing age(high,low,pred)"] = ""
 
-    neighborhood["One-Unit"] = get_val(550, y_bound - 38, 580, y_bound - 25, strip_labels=False).replace("%", "").strip() or "75%"
-    if not neighborhood["One-Unit"].endswith("%"):
-        neighborhood["One-Unit"] += "%"
-    neighborhood["2-4 Unit"] = "0%"
-    neighborhood["Multi-Family"] = "0%"
-    neighborhood["Commercial"] = "0%"
-    neighborhood["Other"] = "25%"
-    neighborhood["Present Land Use for other"] = "Vacant"
+    val_one = get_val(540, y_bound - 38, 580, y_bound - 25, strip_labels=False).replace("%", "").strip()
+    neighborhood["One-Unit"] = f"{val_one}%" if val_one else ""
+    val_24 = get_val(540, y_bound - 25, 580, y_bound - 13, strip_labels=False).replace("%", "").strip()
+    neighborhood["2-4 Unit"] = f"{val_24}%" if val_24 else ""
+    val_mf = get_val(540, y_bound - 13, 580, y_bound - 1, strip_labels=False).replace("%", "").strip()
+    neighborhood["Multi-Family"] = f"{val_mf}%" if val_mf else ""
+    val_com = get_val(540, y_bound - 1, 580, y_bound + 11, strip_labels=False).replace("%", "").strip()
+    neighborhood["Commercial"] = f"{val_com}%" if val_com else ""
+    val_oth = get_val(540, y_bound + 11, 580, y_bound + 23, strip_labels=False).replace("%", "").strip()
+    neighborhood["Other"] = f"{val_oth}%" if val_oth else ""
+    val_oth_desc = get_val(510, y_bound + 23, 580, y_bound + 35, strip_labels=True)
+    neighborhood["Present Land Use for other"] = val_oth_desc
 
     raw_bound = get_val(28, y_bound - 4, 415, y_desc - 2, strip_labels=True)
     neighborhood["Neighborhood Boundaries"] = re.sub(r'^(?:Neighborhood\s+)?Boundaries\s*', '', raw_bound, flags=re.IGNORECASE).strip()
@@ -810,51 +818,87 @@ def extract_page_1_fields(page, full_doc_text=""):
         ("No Zoning", ["No"], (275, 305)),
         ("Illegal (describe)", ["Illegal"], (330, 365))
     ]
-    site["Zoning Compliance"] = extract_choice_from_row(words, y_zcomp, zcomp_opts, 50, 400, default_val="Legal")
-
+    site["Zoning Compliance"] = extract_choice_from_row(words, y_zcomp, zcomp_opts, 50, 400, default_val="") or ""
 
     site["Is the highest and best use of subject property as improved (or as proposed per plans and specifications) the present use?"] = extract_choice_from_row(
-        words, y_hbu, [("Yes", ["Yes"], (390, 420)), ("No", ["No"], (430, 460))], 350, 480, default_val="Yes"
-    )
+        words, y_hbu, [("Yes", ["Yes"], (390, 420)), ("No", ["No"], (430, 460))], 350, 480, default_val=""
+    ) or ""
 
+    # Electricity
+    elec_pub = check_mark_in_box(words, 80, y_util - 5, 115, y_util + 5)
+    elec_oth = check_mark_in_box(words, 120, y_util - 5, 155, y_util + 5)
+    elec_txt = get_val(105, y_util + 3, 160, y_util + 13, strip_labels=True)
+    site["Electricity"] = "Public" if elec_pub else ("Other" if elec_oth else (elec_txt or ""))
+    site["Electricity comment"] = elec_txt if elec_oth else ""
 
-    site["Electricity"] = "Public"
-    site["Electricity comment"] = ""
-    gas_other = get_val(105, y_util + 15, 160, y_util + 25, strip_labels=True)
-    site["Gas"] = gas_other if gas_other else "Public"
-    site["Gas comment"] = ""
-    site["Water"] = "Public"
-    site["Water comment"] = ""
-    sewer_other = get_val(320, y_util + 15, 400, y_util + 25, strip_labels=True)
-    site["Sanitary Sewer"] = sewer_other if sewer_other else "Public"
-    site["Sanitary Sewer comment"] = ""
-    site["Street"] = "Public"
-    site["Street comment"] = ""
-    site["Alley"] = "None"
-    site["Alley comment"] = ""
+    # Gas
+    gas_pub = check_mark_in_box(words, 80, y_util + 7, 115, y_util + 17)
+    gas_oth = check_mark_in_box(words, 120, y_util + 7, 155, y_util + 17)
+    gas_txt = get_val(105, y_util + 15, 160, y_util + 25, strip_labels=True)
+    site["Gas"] = "Public" if gas_pub else ("Other" if gas_oth else (gas_txt or ""))
+    site["Gas comment"] = gas_txt if gas_oth else ""
+
+    # Water
+    water_pub = check_mark_in_box(words, 230, y_util - 5, 265, y_util + 5)
+    water_oth = check_mark_in_box(words, 270, y_util - 5, 305, y_util + 5)
+    water_txt = get_val(290, y_util + 3, 350, y_util + 13, strip_labels=True)
+    site["Water"] = "Public" if water_pub else ("Other" if water_oth else (water_txt or ""))
+    site["Water comment"] = water_txt if water_oth else ""
+
+    # Sanitary Sewer
+    sewer_pub = check_mark_in_box(words, 230, y_util + 7, 265, y_util + 17)
+    sewer_oth = check_mark_in_box(words, 270, y_util + 7, 305, y_util + 17)
+    sewer_txt = get_val(320, y_util + 15, 400, y_util + 25, strip_labels=True)
+    site["Sanitary Sewer"] = "Public" if sewer_pub else ("Other" if sewer_oth else (sewer_txt or ""))
+    site["Sanitary Sewer comment"] = sewer_txt if sewer_oth else ""
+
+    # Street
+    street_pub = check_mark_in_box(words, 410, y_util - 5, 445, y_util + 5)
+    street_prv = check_mark_in_box(words, 460, y_util - 5, 495, y_util + 5)
+    street_txt = get_val(465, y_util + 3, 580, y_util + 13, strip_labels=True)
+    site["Street"] = "Public" if street_pub else ("Private" if street_prv else (street_txt or ""))
+    site["Street comment"] = street_txt if street_prv else ""
+
+    # Alley
+    alley_pub = check_mark_in_box(words, 410, y_util + 7, 445, y_util + 17)
+    alley_prv = check_mark_in_box(words, 460, y_util + 7, 495, y_util + 17)
+    alley_txt = get_val(465, y_util + 15, 580, y_util + 25, strip_labels=True)
+    site["Alley"] = "Public" if alley_pub else ("Private" if alley_prv else ("None" if "none" in alley_txt.lower() else (alley_txt or "")))
+    site["Alley comment"] = alley_txt if alley_prv else ""
 
     site["FEMA Special Flood Hazard Area"] = extract_choice_from_row(
-        words, y_fema, [("Yes", ["Yes"], (135, 165)), ("No", ["No"], (175, 205))], 120, 220, default_val="No"
-    )
+        words, y_fema, [("Yes", ["Yes"], (135, 165)), ("No", ["No"], (175, 205))], 120, 220, default_val=""
+    ) or ""
     site["FEMA Flood Zone"] = get_val(240, y_fema - 2, 315, y_fema + 8, strip_labels=True)
     site["FEMA Map #"] = get_val(355, y_fema - 2, 445, y_fema + 8, strip_labels=True)
     site["FEMA Map Date"] = get_val(490, y_fema - 2, 580, y_fema + 8, strip_labels=True)
 
     site["Are the utilities and off-site improvements typical for the market area?"] = extract_choice_from_row(
-        words, y_typ, [("Yes", ["Yes"], (230, 260)), ("No", ["No"], (270, 300))], 200, 320, default_val="Yes"
-    )
-    site["Are the utilities and off-site improvements typical for the market area? If No, describe"] = ""
+        words, y_typ, [("Yes", ["Yes"], (230, 260)), ("No", ["No"], (270, 300))], 200, 320, default_val=""
+    ) or ""
+    site["Are the utilities and off-site improvements typical for the market area? If No, describe"] = get_val(310, y_typ - 2, 580, y_typ + 8, strip_labels=True)
 
-    matched_inline = [w for w in words if w['top'] >= y_adv - 3 and w['top'] <= y_adv + 3 and w['x0'] > 515]
-    inline_txt = " ".join(w['text'] for w in matched_inline)
-
-    matched_rest = [w for w in words if w['top'] > y_adv + 4 and w['top'] < y_imp - 2 and w['x0'] >= 26.5]
+    adv_choice = extract_choice_from_row(words, y_adv, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val="")
+    adv_desc = get_val(28, y_adv + 8, 580, y_imp - 2, strip_labels=False)
+    site["Are there any adverse site conditions or external factors (easements, encroachments, environmental conditions, land uses, etc.)? If Yes, describe"] = f"{adv_choice}: {adv_desc}".strip(": ") if adv_choice else adv_desc
 
     imp = {k: "" for k in IMPROVEMENTS_FIELDS}
-    imp["Units"] = "One"
-    imp["# of Stories"] = "1"
-    imp["Type"] = "Detached"
-    imp["Existing/Proposed/Under Const."] = "Existing"
+
+    unit_acc = check_mark_in_box(words, 100, y_imp - 5, 125, y_imp + 5)
+    unit_one = check_mark_in_box(words, 45, y_imp - 5, 75, y_imp + 5)
+    imp["Units"] = "One with Accessory Unit" if unit_acc else ("One" if unit_one else "")
+    imp["One with Accessory Unit"] = "Yes" if unit_acc else ("No" if unit_one else "")
+    imp["# of Stories"] = get_val(140, y_imp - 4, 185, y_imp + 8, strip_labels=True)
+
+    type_det = check_mark_in_box(words, 45, y_imp + 8, 75, y_imp + 18)
+    type_att = check_mark_in_box(words, 90, y_imp + 8, 120, y_imp + 18)
+    type_sdet = check_mark_in_box(words, 130, y_imp + 8, 175, y_imp + 18)
+    imp["Type"] = "Detached" if type_det else ("Attached" if type_att else ("Semi-Det." if type_sdet else ""))
+
+    ex_exist = check_mark_in_box(words, 45, y_imp + 20, 75, y_imp + 30)
+    ex_prop = check_mark_in_box(words, 90, y_imp + 20, 120, y_imp + 30)
+    ex_uc = check_mark_in_box(words, 130, y_imp + 20, 175, y_imp + 30)
+    imp["Existing/Proposed/Under Const."] = "Existing" if ex_exist else ("Proposed" if ex_prop else ("Under Const." if ex_uc else ""))
 
     y_style = None
     y_yb = None
@@ -890,56 +934,66 @@ def extract_page_1_fields(page, full_doc_text=""):
     y_def = y_def or 860.0
     y_conf = y_conf or 905.0
 
-    imp["Design (Style)"] = get_val(65, y_style - 2, 185, y_style + 8, strip_labels=True)
-    if not imp["Design (Style)"]:
-        m_style = re.search(r'Design\s*(?:\(Style\))?\s*([A-Za-z0-9\.\s]+?)(?=Year Built|Outside Entry|\n)', txt)
-        imp["Design (Style)"] = m_style.group(1).strip() if m_style else "Traditional"
+    m_style = re.search(r'Design\s*(?:\(Style\))?\s*([A-Za-z0-9\.\s]+?)(?=Year Built|Outside Entry|\n)', txt)
+    imp["Design (Style)"] = get_val(65, y_style - 2, 185, y_style + 8, strip_labels=True) or (m_style.group(1).strip() if m_style else "")
 
-    imp["Year Built"] = get_val(50, y_yb - 2, 100, y_yb + 8, strip_labels=True)
-    if not imp["Year Built"]:
-        m_yb = re.search(r'Year Built\s*(\d{4})', txt)
-        imp["Year Built"] = m_yb.group(1) if m_yb else "1995"
+    m_yb = re.search(r'Year Built\s*(\d{4})', txt)
+    imp["Year Built"] = get_val(50, y_yb - 2, 100, y_yb + 8, strip_labels=True) or (m_yb.group(1) if m_yb else "")
 
-    imp["Effective Age (Yrs)"] = get_val(75, y_yb + 8, 120, y_yb + 20, strip_labels=True)
-    if not imp["Effective Age (Yrs)"]:
-        m_ea = re.search(r'Effective Age\s*(?:\(Yrs\))?\s*(\d+)', txt)
-        imp["Effective Age (Yrs)"] = m_ea.group(1) if m_ea else "15"
+    m_ea = re.search(r'Effective Age\s*(?:\(Yrs\))?\s*(\d+)', txt)
+    imp["Effective Age (Yrs)"] = get_val(75, y_yb + 8, 120, y_yb + 20, strip_labels=True) or (m_ea.group(1) if m_ea else "")
 
-    if "crawl" in txt.lower():
-        imp["Foundation Type"] = "Crawl Space"
-    elif "slab" in txt.lower():
-        imp["Foundation Type"] = "Slab"
-    elif "basement" in txt.lower() and "full" in txt.lower():
-        imp["Foundation Type"] = "Full Basement"
-    else:
-        imp["Foundation Type"] = "Crawl Space"
+    found_types = []
+    if check_mark_in_box(words, 40, y_yb + 32, 65, y_yb + 42) or "crawl" in txt.lower():
+        found_types.append("Crawl Space")
+    if check_mark_in_box(words, 90, y_yb + 32, 115, y_yb + 42) or "slab" in txt.lower():
+        found_types.append("Slab")
+    if check_mark_in_box(words, 130, y_yb + 32, 160, y_yb + 42) or "full basement" in txt.lower():
+        found_types.append("Full Basement")
+    if check_mark_in_box(words, 170, y_yb + 32, 205, y_yb + 42) or "partial basement" in txt.lower():
+        found_types.append("Partial Basement")
+    imp["Foundation Type"] = ", ".join(found_types) if found_types else ""
 
     rooms_val = get_val(180, y_gla - 3, 200, y_gla + 8, strip_labels=True)
     beds_val = get_val(260, y_gla - 3, 280, y_gla + 8, strip_labels=True)
     baths_val = get_val(340, y_gla - 3, 370, y_gla + 8, strip_labels=True)
     gla_val = get_val(405, y_gla - 3, 445, y_gla + 8, strip_labels=True)
 
-    imp["Finished area above grade Rooms"] = rooms_val if rooms_val else "6"
-    imp["Finished area above grade Bedrooms"] = beds_val if beds_val else "3"
-    imp["Finished area above grade Bath(s)"] = baths_val if baths_val else "2.0"
-    imp["Square Feet of Gross Living Area Above Grade"] = gla_val if gla_val else "1,800"
+    imp["Finished area above grade Rooms"] = rooms_val or ""
+    imp["Finished area above grade Bedrooms"] = beds_val or ""
+    imp["Finished area above grade Bath(s)"] = baths_val or ""
+    imp["Square Feet of Gross Living Area Above Grade"] = gla_val or ""
 
-    imp["Foundation Walls (Material/Condition)"] = "Masonry / Good"
-    imp["Exterior Walls (Material/Condition)"] = "Brick / Vinyl / Good"
-    imp["Roof Surface (Material/Condition)"] = "Composition Shingle / Good"
-    imp["Gutters & Downspouts (Material/Condition)"] = "Aluminum / Good"
-    imp["Window Type (Material/Condition)"] = "Thermal / Good"
-    imp["Storm Sash/Insulated"] = "Insulated"
-    imp["Screens"] = "Yes"
-    imp["Floors (Material/Condition)"] = "Carpet/LVP / Good"
-    imp["Walls (Material/Condition)"] = "Drywall / Good"
-    imp["Trim/Finish (Material/Condition)"] = "Wood / Good"
-    imp["Bath Floor (Material/Condition)"] = "Vinyl/LVP / Good"
-    imp["Bath Wainscot (Material/Condition)"] = "Ceramic Tile / Good"
+    imp["Foundation Walls (Material/Condition)"] = get_val(130, y_yb + 20, 270, y_yb + 32, strip_labels=True)
+    imp["Exterior Walls (Material/Condition)"] = get_val(130, y_yb + 32, 270, y_yb + 44, strip_labels=True)
+    imp["Roof Surface (Material/Condition)"] = get_val(130, y_yb + 44, 270, y_yb + 56, strip_labels=True)
+    imp["Gutters & Downspouts (Material/Condition)"] = get_val(130, y_yb + 56, 270, y_yb + 68, strip_labels=True)
+    imp["Window Type (Material/Condition)"] = get_val(130, y_yb + 68, 270, y_yb + 80, strip_labels=True)
+    imp["Storm Sash/Insulated"] = "Insulated" if check_mark_in_box(words, 130, y_yb + 80, 160, y_yb + 92) else get_val(130, y_yb + 80, 220, y_yb + 92, strip_labels=True)
+    imp["Screens"] = "Yes" if check_mark_in_box(words, 220, y_yb + 80, 245, y_yb + 92) else get_val(220, y_yb + 80, 270, y_yb + 92, strip_labels=True)
 
-    imp["Heating Type"] = "Heat Pump" if "heat pump" in txt.lower() else "FWA"
-    imp["Fuel"] = "Electric" if "electric" in txt.lower() else "Gas"
-    imp["Cooling Type"] = "Central Air"
+    imp["Floors (Material/Condition)"] = get_val(280, y_yb + 20, 420, y_yb + 32, strip_labels=True)
+    imp["Walls (Material/Condition)"] = get_val(280, y_yb + 32, 420, y_yb + 44, strip_labels=True)
+    imp["Trim/Finish (Material/Condition)"] = get_val(280, y_yb + 44, 420, y_yb + 56, strip_labels=True)
+    imp["Bath Floor (Material/Condition)"] = get_val(280, y_yb + 56, 420, y_yb + 68, strip_labels=True)
+    imp["Bath Wainscot (Material/Condition)"] = get_val(280, y_yb + 68, 420, y_yb + 80, strip_labels=True)
+
+    ht_fwa = check_mark_in_box(words, 280, y_yb + 80, 310, y_yb + 92)
+    ht_hw = check_mark_in_box(words, 320, y_yb + 80, 350, y_yb + 92)
+    ht_hp = "heat pump" in txt.lower() or check_mark_in_box(words, 360, y_yb + 80, 400, y_yb + 92)
+    ht_other = get_val(380, y_yb + 80, 430, y_yb + 92, strip_labels=True)
+    imp["Heating Type"] = "FWA" if ht_fwa else ("HW" if ht_hw else ("Heat Pump" if ht_hp else (ht_other or "")))
+
+    fuel_gas = check_mark_in_box(words, 430, y_yb + 80, 455, y_yb + 92) or "gas" in txt.lower()
+    fuel_elec = check_mark_in_box(words, 460, y_yb + 80, 490, y_yb + 92) or "electric" in txt.lower()
+    fuel_oil = check_mark_in_box(words, 495, y_yb + 80, 520, y_yb + 92) or "oil" in txt.lower()
+    fuel_other = get_val(515, y_yb + 80, 580, y_yb + 92, strip_labels=True)
+    imp["Fuel"] = "Gas" if fuel_gas else ("Electric" if fuel_elec else ("Oil" if fuel_oil else (fuel_other or "")))
+
+    cool_ca = check_mark_in_box(words, 430, y_yb + 92, 465, y_yb + 104) or "central air" in txt.lower()
+    cool_ind = check_mark_in_box(words, 470, y_yb + 92, 510, y_yb + 104)
+    cool_other = get_val(510, y_yb + 92, 580, y_yb + 104, strip_labels=True)
+    imp["Cooling Type"] = "Central Air" if cool_ca else ("Individual" if cool_ind else (cool_other or ""))
 
     y_att = None
     for w in words:
@@ -1022,26 +1076,33 @@ def extract_page_1_fields(page, full_doc_text=""):
         amen_checked.append("Pool")
 
     imp["Amenity Category"] = ", ".join(amen_checked)
-    imp["Woodstove(s) #"] = woodstove_cnt if woodstove_cnt else "0"
-    imp["Fireplace(s) #"] = fireplace_cnt if fireplace_cnt else "0"
-    imp["Patio/Deck"] = patio_txt if patio_txt else "None"
-    imp["Fence"] = fence_txt if fence_txt else "None"
-    imp["Porch"] = porch_txt if porch_txt else "None"
-    imp["Pool"] = pool_txt if pool_txt else "None"
-    imp["Other in Amenities"] = other_amen if other_amen else "None"
+    imp["Woodstove(s) #"] = woodstove_cnt or ""
+    imp["Fireplace(s) #"] = fireplace_cnt or ""
+    imp["Patio/Deck"] = patio_txt or ""
+    imp["Fence"] = fence_txt or ""
+    imp["Porch"] = porch_txt or ""
+    imp["Pool"] = pool_txt or ""
+    imp["Other in Amenities"] = other_amen or ""
 
     drive_cars = get_amen_word(535, y_amen - 15, 560, y_amen - 7)
     drive_surf = get_amen_word(510, y_amen - 3, 560, y_amen + 4)
     garage_cars = get_amen_word(535, y_amen + 8, 560, y_amen + 16)
     carport_cars = get_amen_word(535, y_amen + 20, 560, y_amen + 28)
-    att_det = "Attached" if check_mark_in_box(words, 460, y_amen + 30, 475, y_amen + 40) else ("Detached" if check_mark_in_box(words, 510, y_amen + 30, 525, y_amen + 40) else "Built-in")
+    att_det = "Attached" if check_mark_in_box(words, 460, y_amen + 30, 475, y_amen + 40) else ("Detached" if check_mark_in_box(words, 510, y_amen + 30, 525, y_amen + 40) else ("Built-in" if check_mark_in_box(words, 545, y_amen + 30, 565, y_amen + 40) else ""))
 
-    imp["Car Storage"] = "Driveway / Attached Garage"
-    imp["Driveway # of Cars"] = drive_cars if drive_cars else "2"
-    imp["Driveway Surface"] = drive_surf if drive_surf else "Concrete"
-    imp["Garage # of Cars"] = garage_cars if garage_cars else "0"
-    imp["Carport # of Cars"] = carport_cars if carport_cars else "0"
-    imp["Att./Det./Built-in"] = att_det
+    car_storage_parts = []
+    if drive_cars or drive_surf:
+        car_storage_parts.append(f"Driveway ({drive_cars} cars, {drive_surf})".strip(" ,()"))
+    if garage_cars:
+        car_storage_parts.append(f"Garage ({garage_cars} cars, {att_det})".strip(" ,()"))
+    if carport_cars:
+        car_storage_parts.append(f"Carport ({carport_cars} cars)".strip(" ,()"))
+    imp["Car Storage"] = " / ".join(car_storage_parts) if car_storage_parts else ""
+    imp["Driveway # of Cars"] = drive_cars or ""
+    imp["Driveway Surface"] = drive_surf or ""
+    imp["Garage # of Cars"] = garage_cars or ""
+    imp["Carport # of Cars"] = carport_cars or ""
+    imp["Att./Det./Built-in"] = att_det or ""
 
     raw_feat = get_val(28, y_feat - 2, 580, y_cond - 2, strip_labels=False)
     raw_feat = re.sub(r'^(?:Additional\s+features[^\)]*\)\.?\s*)', '', raw_feat, flags=re.IGNORECASE).strip()
@@ -1049,11 +1110,16 @@ def extract_page_1_fields(page, full_doc_text=""):
 
     raw_cond = get_val(28, y_cond - 2, 580, y_def - 2, strip_labels=False)
     raw_cond = re.sub(r'^(?:Describe\s+the\s+condition\s+of\s+the\s+property[^\)]*\)\.?\s*)', '', raw_cond, flags=re.IGNORECASE).strip()
-    imp["Describe the condition of the property"] = raw_cond if raw_cond else "The property is in good overall condition with no major functional or external obsolescence."
+    imp["Describe the condition of the property"] = raw_cond or ""
 
-    imp["Are there any physical deficiencies or adverse conditions that affect the livability, soundness, or structural integrity of the property? If Yes, describe"] = "No"
-    imp["Does the property generally conform to the neighborhood (functional utility, style, condition, use, construction, etc.)?"] = "Yes"
-    imp["Does the property generally conform to the neighborhood (functional utility, style, condition, use, construction, etc.)?If Yes, describe"] = "Yes, property conforms well to neighborhood homes."
+    def_choice = extract_choice_from_row(words, y_def, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val="")
+    def_desc = get_val(28, y_def + 8, 580, y_conf - 2, strip_labels=False)
+    imp["Are there any physical deficiencies or adverse conditions that affect the livability, soundness, or structural integrity of the property? If Yes, describe"] = f"{def_choice}: {def_desc}".strip(": ") if def_choice else def_desc
+
+    conf_choice = extract_choice_from_row(words, y_conf, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val="")
+    conf_desc = get_val(28, y_conf + 8, 580, 960, strip_labels=False)
+    imp["Does the property generally conform to the neighborhood (functional utility, style, condition, use, construction, etc.)?"] = conf_choice or ""
+    imp["Does the property generally conform to the neighborhood (functional utility, style, condition, use, construction, etc.)?If Yes, describe"] = f"{conf_choice}: {conf_desc}".strip(": ") if conf_choice else conf_desc
 
     return {
         "SUBJECT": subject,
@@ -1362,7 +1428,18 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None)
     recon['Income Approach (if developed) $ Comment'] = ""
 
     recon_box_text = get_cell(60, y_ind + 35, 565, y_ind + 70)
-    recon['This appraisal is made "as is", subject to completion per plans and specifications on the basis of a hypothetical condition that the improvements have been completed, subject to the following repairs or alterations on the basis of a hypothetical condition that the repairs or alterations have been completed, or subject to the following required inspection based on the extraordinary assumption that the condition or deficiency does not require alteration or repair:'] = "As is" if ("as is" in recon_box_text.lower() or "as is" in txt.lower()) else "Subject to"
+    recon_choice = ""
+    if "as is" in recon_box_text.lower():
+        recon_choice = "As is"
+    elif "subject to completion" in recon_box_text.lower():
+        recon_choice = "Subject to completion"
+    elif "subject to the following repairs" in recon_box_text.lower() or "repairs or alterations" in recon_box_text.lower():
+        recon_choice = "Subject to repairs"
+    elif "subject to the following required inspection" in recon_box_text.lower() or "required inspection" in recon_box_text.lower():
+        recon_choice = "Subject to inspection"
+    elif "as is" in txt.lower():
+        recon_choice = "As is"
+    recon['This appraisal is made "as is", subject to completion per plans and specifications on the basis of a hypothetical condition that the improvements have been completed, subject to the following repairs or alterations on the basis of a hypothetical condition that the repairs or alterations have been completed, or subject to the following required inspection based on the extraordinary assumption that the condition or deficiency does not require alteration or repair:'] = recon_choice
 
     v_val = get_w_recon(520, 580, y_ind + 90, y_ind + 125)
     if not v_val:
@@ -1495,16 +1572,46 @@ def extract_income_approach_section(page_p3, full_doc_text=""):
     inc["Indicated Value by Income Approach"] = m_ind_inc.group(1) if m_ind_inc else ""
     
     m_sum_inc = re.search(r'Summary of Income Approach[^\n]*\.\s*\n?(.*?)(?=PROJECT INFORMATION|PUD INFORMATION|\n\n|$)', txt, re.DOTALL | re.IGNORECASE)
-    inc["Summary of Income Approach (including support for market rent and GRM) "] = m_sum_inc.group(1).strip() if m_sum_inc else "The Income Approach was not developed as the subject property is located in an owner-occupied residential neighborhood."
+    inc["Summary of Income Approach (including support for market rent and GRM) "] = m_sum_inc.group(1).strip() if m_sum_inc else ""
     return inc
 
 
 def extract_pud_info_section(page_p3, full_doc_text=""):
     pud = {k: "" for k in PUD_INFO_FIELDS}
-    pud["Is the developer/builder in control of the Homeowners' Association (HOA)?"] = "No"
-    pud["Was the project created by the conversion of existing building(s) into a PUD?"] = "No"
-    pud["Are the units, common elements, and recreation facilities complete?"] = "Yes"
-    pud["Are the common elements leased to or by the Homeowners' Association?"] = "No"
+    if not page_p3:
+        return pud
+
+    words = page_p3.extract_words()
+    txt = page_p3.extract_text() or ""
+    
+    # If PUD section is not mentioned or blank on page 3, return empty dict
+    if "PUD INFORMATION" not in txt and "Homeowners' Association" not in txt:
+        return pud
+
+    def check_mark(x0, y0, x1, y1):
+        for w in words:
+            if w['x0'] >= x0 - 3 and w['x1'] <= x1 + 3 and w['top'] >= y0 - 3 and w['bottom'] <= y1 + 5:
+                if w['text'] in ["8", "X", "x", "☒", "☑", "✓", "[X]"]:
+                    return True
+        return False
+
+    # Extract dynamic values or return empty
+    m_hoa = re.search(r'developer/builder in control[^\n]*\b(Yes|No)\b', txt, re.IGNORECASE)
+    if m_hoa:
+        pud["Is the developer/builder in control of the Homeowners' Association (HOA)?"] = m_hoa.group(1).capitalize()
+    
+    m_conv = re.search(r'conversion of existing building[^\n]*\b(Yes|No)\b', txt, re.IGNORECASE)
+    if m_conv:
+        pud["Was the project created by the conversion of existing building(s) into a PUD?"] = m_conv.group(1).capitalize()
+        
+    m_units = re.search(r'units, common elements.*?complete\??\s*\b(Yes|No)\b', txt, re.IGNORECASE)
+    if m_units:
+        pud["Are the units, common elements, and recreation facilities complete?"] = m_units.group(1).capitalize()
+
+    m_lease = re.search(r'common elements leased to or by[^\n]*\b(Yes|No)\b', txt, re.IGNORECASE)
+    if m_lease:
+        pud["Are the common elements leased to or by the Homeowners' Association?"] = m_lease.group(1).capitalize()
+
     return pud
 
 
@@ -1518,8 +1625,6 @@ def extract_certification_section(pdf_path, full_doc_text=""):
             break
             
     cert = {k: "" for k in CERTIFICATION_FIELDS}
-    cert["Signature"] = "Present"
-    cert["Appraiser Signature"] = "Present"
     
     if cert_page_idx is not None:
         with pdfplumber.open(pdf_path) as pdf:
@@ -1549,6 +1654,10 @@ def extract_certification_section(pdf_path, full_doc_text=""):
             m = re.search(r'Name\s*(.*?)(?=\nCompany|\nTelephone|$)', full_text, re.IGNORECASE)
             cert["Name"] = clean_field(m.group(1), ["Name"]) if m else ""
             cert["Appraiser Name"] = cert["Name"]
+            
+            if cert["Name"] or "signature" in full_text.lower():
+                cert["Signature"] = "Present"
+                cert["Appraiser Signature"] = "Present"
             
             m = re.search(r'Company Name\s*(.*?)(?=\nCompany Address|\nTelephone|$)', full_text, re.IGNORECASE)
             cert["Company Name"] = clean_field(m.group(1), ["Company Name", "Name"]) if m else ""
@@ -1722,9 +1831,19 @@ def extract_market_conditions_section(pdf_path, full_doc_text=""):
         mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Current-3 Months)"] = get_cell(340, 410, y_r9)
         mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Overall Trend)"] = get_trend(y_r9, False)
         
-        def get_text_in_narr_box(y0, y1):
-            matched = [w for w in words if w['top'] >= y0 - 3 and w['bottom'] <= y1 and w['x0'] >= 26.5 and w['text'] not in ["SISYLANA", "&", "MARKET", "RESEARCH", "ANALYSIS"]]
-            matched.sort(key=lambda w: (round(w['top'] / 4.0) * 4.0, w['x0']))
+        def check_mark(x0, y0, x1, y1):
+            for w in words:
+                if w['x0'] >= x0 - 3 and w['x1'] <= x1 + 3 and w['top'] >= y0 - 3 and w['bottom'] <= y1 + 5:
+                    if w['text'] in ["8", "X", "x", "☒", "☑", "✓", "[X]"]:
+                        return True
+            return False
+
+        def get_text_in_narr_box(y_start, y_end):
+            matched = [
+                w for w in words
+                if w['top'] >= y_start - 2 and w['bottom'] <= y_end + 2 and w['x0'] >= 25 and w['x1'] <= 585
+            ]
+            matched.sort(key=lambda w: (round(w['top'] / 8.0) * 8, w['x0']))
             return " ".join(w['text'] for w in matched).strip()
 
         y_conc_lbl = next((w['top'] for w in words if 'concessions' in w['text'].lower() and w['top'] > 280), 320.0)
@@ -1733,13 +1852,31 @@ def extract_market_conditions_section(pdf_path, full_doc_text=""):
         y_sum_lbl = next((w['top'] for w in words if 'summarize' in w['text'].lower() and w['top'] > 450), 490.0)
         y_bot = next((w['top'] for w in words if ('fannie' in w['text'].lower() or 'freddie' in w['text'].lower() or 'project' in w['text'].lower() or 'signature' in w['text'].lower()) and w['top'] > 600), 750.0)
 
-        mc["Seller-(developer, builder, etc.)paid financial assistance prevalent?"] = "No"
+        conc_prev = ""
+        if check_mark(360, y_conc_lbl - 5, 410, y_conc_lbl + 5):
+            conc_prev = "Yes"
+        elif check_mark(410, y_conc_lbl - 5, 460, y_conc_lbl + 5):
+            conc_prev = "No"
+        elif "prevalent? yes" in p.extract_text().lower() or "prevalent? [x] yes" in p.extract_text().lower():
+            conc_prev = "Yes"
+        elif "prevalent? no" in p.extract_text().lower() or "prevalent? [x] no" in p.extract_text().lower():
+            conc_prev = "No"
+        mc["Seller-(developer, builder, etc.)paid financial assistance prevalent?"] = conc_prev
 
         txt_conc = get_text_in_narr_box(y_conc_lbl, y_reo_lbl - 5)
         txt_conc = re.sub(r'^(?:Explain\s+in\s+detail[^\)]*\)\.?\s*)', '', txt_conc, flags=re.IGNORECASE).strip()
         mc["Explain in detail the seller concessions trends for the past 12 months (e.g., seller contributions increased from 3% to 5%, increasing use of buydowns, closing costs, condo fees, options, etc.)."] = txt_conc
 
-        mc["Are foreclosure sales (REO sales) a factor in the market?"] = "No"
+        reo_factor = ""
+        if check_mark(360, y_reo_lbl - 5, 410, y_reo_lbl + 5):
+            reo_factor = "Yes"
+        elif check_mark(410, y_reo_lbl - 5, 460, y_reo_lbl + 5):
+            reo_factor = "No"
+        elif "factor in the market? yes" in p.extract_text().lower() or "factor in the market? [x] yes" in p.extract_text().lower():
+            reo_factor = "Yes"
+        elif "factor in the market? no" in p.extract_text().lower() or "factor in the market? [x] no" in p.extract_text().lower():
+            reo_factor = "No"
+        mc["Are foreclosure sales (REO sales) a factor in the market?"] = reo_factor
         
         txt_reo = get_text_in_narr_box(y_reo_lbl, y_cite_lbl - 5)
         txt_reo = re.sub(r'^(?:[X8x\s]*Are\s+foreclosure\s+sales.*?properties\)\.?\s*)', '', txt_reo, flags=re.IGNORECASE).strip()
@@ -1915,8 +2052,9 @@ def extract_sales_transfer_section(page_p2, full_doc_text=""):
     words = page_p2.extract_words()
     txt = page_p2.extract_text() or ""
     
-    chk_sub = "did not" if any("did not reveal" in w['text'].lower() for w in words if 535 <= w['top'] <= 565) or "did not reveal" in txt.lower() else "did"
-    chk_comp = "did not" if any("did not reveal" in w['text'].lower() for w in words if 560 <= w['top'] <= 585) or "did not reveal" in txt.lower() else "did"
+    chk_res = "did" if ("did research" in txt.lower() or "did" in txt.lower()) else ""
+    chk_sub = "did not" if any("did not reveal" in w['text'].lower() for w in words if 535 <= w['top'] <= 565) or "did not reveal" in txt.lower() else ("did" if "did reveal" in txt.lower() else "")
+    chk_comp = "did not" if any("did not reveal" in w['text'].lower() for w in words if 560 <= w['top'] <= 585) or "did not reveal" in txt.lower() else ("did" if "did reveal" in txt.lower() else "")
     
     w_src1 = [w for w in words if 546 <= w['top'] <= 558 and w['x0'] >= 75 and w['text'] not in ["Data", "source(s)", "My", "research"]]
     src_sub = " ".join(w['text'] for w in w_src1).strip()
@@ -1938,7 +2076,7 @@ def extract_sales_transfer_section(page_p2, full_doc_text=""):
     ind_val = w_ind[0]['text'] if w_ind else ""
 
     st.update({
-        "I did did not research the sale or transfer history of the subject property and comparable sales. If not, explain": "did",
+        "I did did not research the sale or transfer history of the subject property and comparable sales. If not, explain": chk_res,
         "My research did did not reveal any prior sales or transfers of the subject property for the three years prior to the effective date of this appraisal.": chk_sub,
         "My research did did not reveal any prior sales or transfers of the subject property for the three years prior to the effective date of this appraisal": chk_sub,
         "Data Source(s) for subject property research": src_sub,
@@ -1966,8 +2104,9 @@ def extract_prior_sale_history_section(page_p2, full_doc_text=""):
     words = page_p2.extract_words()
     txt = page_p2.extract_text() or ""
     
-    chk_sub = "did not" if any("did not reveal" in w['text'].lower() for w in words if 535 <= w['top'] <= 565) or "did not reveal" in txt.lower() else "did"
-    chk_comp = "did not" if any("did not reveal" in w['text'].lower() for w in words if 560 <= w['top'] <= 585) or "did not reveal" in txt.lower() else "did"
+    chk_res = "did" if ("did research" in txt.lower() or "did" in txt.lower()) else ""
+    chk_sub = "did not" if any("did not reveal" in w['text'].lower() for w in words if 535 <= w['top'] <= 565) or "did not reveal" in txt.lower() else ("did" if "did reveal" in txt.lower() else "")
+    chk_comp = "did not" if any("did not reveal" in w['text'].lower() for w in words if 560 <= w['top'] <= 585) or "did not reveal" in txt.lower() else ("did" if "did reveal" in txt.lower() else "")
 
     w_src1 = [w for w in words if 546 <= w['top'] <= 558 and w['x0'] >= 75 and w['text'] not in ["Data", "source(s)", "My", "research"]]
     src_sub = " ".join(w['text'] for w in w_src1).strip()
@@ -1981,7 +2120,7 @@ def extract_prior_sale_history_section(page_p2, full_doc_text=""):
     clean_anal = re.sub(r'^(?:Analysis\s+of\s+prior\s+sale\s+or\s+transfer\s+history\s+of\s+the\s+subject\s+property\s+and\s+comparable\s+sales\s*)', '', raw_anal, flags=re.IGNORECASE).strip()
 
     psh.update({
-        "Prior Sale History: I did did not research the sale or transfer history of the subject property and comparable sales": "did",
+        "Prior Sale History: I did did not research the sale or transfer history of the subject property and comparable sales": chk_res,
         "Prior Sale History: My research did did not reveal any prior sales or transfers of the subject property for the three years prior to the effective date of this appraisal": chk_sub,
         "Prior Sale History: Data source(s) for subject": src_sub,
         "Prior Sale History: My research did did not reveal any prior sales or transfers of the comparable sales for the year prior to the date of sale of the comparable sale": chk_comp,
@@ -2032,11 +2171,17 @@ def extract_info_of_sales_section(page_p2, full_doc_text=""):
 
     offered_str = ""
     if cnt_off or low_off or high_off:
-        offered_str = f"There are {cnt_off or '0'} comparable properties currently offered for sale in the subject neighborhood ranging in price from $ {low_off or '0'} to $ {high_off or '0'}"
+        cnt_part = cnt_off if cnt_off else "____"
+        low_part = f"${low_off}" if low_off else "$___"
+        high_part = f"${high_off}" if high_off else "$___"
+        offered_str = f"There are {cnt_part} comparable properties currently offered for sale in the subject neighborhood ranging in price from {low_part} to {high_part}"
     
     sales_str = ""
     if cnt_sales or low_sales or high_sales:
-        sales_str = f"There are {cnt_sales or '0'} comparable sales in the subject neighborhood within the past twelve months ranging in sale price from $ {low_sales or '0'} to $ {high_sales or '0'}"
+        cnt_part = cnt_sales if cnt_sales else "___"
+        low_part = f"${low_sales}" if low_sales else "$___"
+        high_part = f"${high_sales}" if high_sales else "$____"
+        sales_str = f"There are {cnt_part} comparable sales in the subject neighborhood within the past twelve months ranging in sale price from {low_part} to {high_part}"
 
     info.update({
         "There are ____ comparable properties currently offered for sale in the subject neighborhood ranging in price from$ ___to $___": offered_str,
@@ -2060,6 +2205,9 @@ def extract_fields_from_pdf_offline(pdf_path):
         page_indices = locate_appraisal_pages(doc)
 
         if page_indices["form_p1"] is None or page_indices["form_p2"] is None:
+            if "WORLDWIDE ERC" in full_doc_text.upper() or "ERC SUMMARY APPRAISAL REPORT" in full_doc_text.upper() or "RELOCATION APPRAISAL" in full_doc_text.upper():
+                from .pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+                return extract_fields_from_pdf_ecr_offline(pdf_path)
             return {
                 "error": "Unrecognized Layout",
                 "message": "Could not identify standard Form 1004 pages."

@@ -20,6 +20,36 @@ def _check_for_api_error_message(response_text, prompt_feedback):
     return "Due to high traffic" in response_text or \
            "API quota exceeded" in response_text
 
+def clean_sublabels(s: str) -> str:
+    if not s:
+        return ""
+    sub_labels = [
+        r"^(?:Client\s*)?File\s*#?\s*[:\-]?",
+        r"^(?:Appraiser\s*)?File\s*#?\s*[:\-]?",
+        r"^(?:Subject\s*Property\s*|Client\s*|Appraiser\s*)?Address\s*[:\-]?",
+        r"^(?:Subject\s*|Client\s*|Appraiser\s*)?City\s*[:\-]?",
+        r"^(?:Subject\s*|Client\s*|Appraiser\s*)?State\s*[:\-]?",
+        r"^(?:Subject\s*|Client\s*|Appraiser\s*Zip\s*)?(?:Zip\s*)?Code\s*[:\-]?",
+        r"^(?:Subject\s*)?County\s*[:\-]?",
+        r"^(?:Subject\s*)?Unit\s*[:\-]?",
+        r"^(?:Appraiser\s*Company\s*)?Name\s*[:\-]?",
+        r"^(?:Data\s*)?Source\s*[:\-]?",
+        r"^Tax\s*Year\s*[:\-]?",
+        r"^(?:Monthly\s*HOA\s*)?Fees?\s*[:\-]?",
+        r"^(?:Original\s*List\s*|Current\s*List\s*|Last\s*Sale\s*)?Price\s*[:\-]?",
+        r"^(?:Date\s*of\s*Last\s*Price\s*)?Revision\s*[:\-]?",
+        r"^Days[\-\s]on[\-\s]market\s*[:\-]?",
+        r"^(?:Listing\s*)?Company\s*\/\s*Agent\s*[:\-]?",
+        r"^(?:Appraiser\s*)?Ph(?:one|\.)?\s*#?\s*[:\-]?",
+        r"^(?:Appraiser\s*)?Fax\s*#?\s*[:\-]?",
+        r"^(?:Appraiser\s*)?E-?mail\s*[:\-]?",
+        r"^(?:Last\s*Sale\s*|Closing\s*)?Date\s*[:\-]?",
+    ]
+    for pat in sub_labels:
+        s = re.sub(pat, "", s, flags=re.IGNORECASE).strip()
+    return s.strip()
+
+
 def sanitize_extracted_data(data):
     """Recursively cleans up boolean mapping and removes checkbox/checkmark formatting prefixes (e.g. 'X One' -> 'One')."""
     if isinstance(data, dict):
@@ -36,6 +66,7 @@ def sanitize_extracted_data(data):
             cleaned = cleaned.split(maxsplit=1)[-1]
         if len(cleaned) > 1 and cleaned[0].upper() == 'X' and cleaned[1].isupper():
             cleaned = cleaned[1:]
+        cleaned = clean_sublabels(cleaned)
         return " ".join(cleaned.split())
     return data
 
@@ -722,7 +753,11 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
     if form_type == "Appraisal Version #1":
         from api.pdf_extractor_v1 import extract_fields_from_pdf_v1
         return extract_fields_from_pdf_v1(pdf_path, category=category, custom_prompt=custom_prompt, prompt_type=prompt_type)
-    if form_type == "ECR":
+    if str(form_type or "").strip().upper() in ["ECR", "ERC", "WORLDWIDE ERC"]:
+        from api.pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+        res = extract_fields_from_pdf_ecr_offline(pdf_path)
+        if res.get("status") == "success" or not custom_prompt:
+            return res
         from api.pdf_extractor_ecr import extract_fields_from_pdf_ecr
         return extract_fields_from_pdf_ecr(pdf_path, category=category, custom_prompt=custom_prompt, prompt_type=prompt_type)
 

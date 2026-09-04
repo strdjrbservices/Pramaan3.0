@@ -13,6 +13,46 @@ import CheckIcon from '@mui/icons-material/Check';
 import CloseIcon from '@mui/icons-material/Close';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
+
+export const getFriendlyFieldLabel = (field) => {
+  if (!field) return '';
+  if (field.startsWith('Analyze and discuss any current agreement of sale')) {
+    return 'Agreement of Sale & 3-Year Sales History';
+  }
+  if (field.startsWith('Discuss atypical taxes, homeowner association')) {
+    return 'Atypical Taxes & HOA Fees Discussion';
+  }
+  if (field.startsWith('Define neighborhood boundaries')) {
+    return 'Neighborhood Boundaries Definition';
+  }
+  if (field.startsWith('Discuss positive and negative neighborhood')) {
+    return 'Neighborhood Marketability Characteristics';
+  }
+  if (field.startsWith('Discuss the site factors')) {
+    return 'Site Factors & Marketability Discussion';
+  }
+  if (field.startsWith('For each Competing Property, specifically discuss')) {
+    return 'Competing Properties Analysis Discussion';
+  }
+  if (field.startsWith('Identify which competing property is positioned to sell first')) {
+    return 'Competing Property Positioned to Sell First';
+  }
+  if (field.startsWith('Forecasting Adjustment Analysis:')) {
+    return 'Forecasting Adjustment Analysis & Support';
+  }
+  if (field.startsWith('Discuss each comparable sale and explain subjective adjustments')) {
+    return 'Comparable Sales & Subjective Adjustments';
+  }
+  if (field.startsWith('Reconciliation (discuss the specific reasoning')) {
+    return 'Reconciliation of Anticipated Sales Price';
+  }
+  if (field.startsWith('Are there any mandatory inspections')) {
+    return 'Mandatory Inspections Required for Title Transfer';
+  }
+  return field;
+};
 
 export const ECRComparisonTable = ({
   comparisonRows = [],
@@ -24,6 +64,7 @@ export const ECRComparisonTable = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [onlyDifferences, setOnlyDifferences] = useState(false);
   const [selectedSection, setSelectedSection] = useState('ALL');
+  const [showSalesGrid, setShowSalesGrid] = useState(true);
 
   const [editingCellKey, setEditingCellKey] = useState(null);
   const [editingValue, setEditingValue] = useState('');
@@ -35,6 +76,9 @@ export const ECRComparisonTable = ({
 
   const filteredRows = useMemo(() => {
     return comparisonRows.filter((row) => {
+      if (!showSalesGrid && selectedSection === 'ALL' && row.section.startsWith('Sales Comparison')) {
+        return false;
+      }
       if (onlyDifferences && row.status === 'MATCH') return false;
       if (selectedSection !== 'ALL' && row.section !== selectedSection) return false;
 
@@ -48,7 +92,7 @@ export const ECRComparisonTable = ({
       }
       return true;
     });
-  }, [comparisonRows, onlyDifferences, selectedSection, searchTerm]);
+  }, [comparisonRows, onlyDifferences, selectedSection, searchTerm, showSalesGrid]);
 
   const handleStartEdit = (section, field, fileType, currentValue) => {
     if (!isEditable) return;
@@ -256,6 +300,17 @@ export const ECRComparisonTable = ({
           }
           sx={{ whiteSpace: 'nowrap' }}
         />
+
+        <Button
+          size="small"
+          variant={showSalesGrid ? 'outlined' : 'contained'}
+          color={showSalesGrid ? 'primary' : 'inherit'}
+          onClick={() => setShowSalesGrid((prev) => !prev)}
+          startIcon={showSalesGrid ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+          sx={{ whiteSpace: 'nowrap', textTransform: 'none', fontWeight: 600, fontSize: '0.8rem', borderRadius: 1.5 }}
+        >
+          {showSalesGrid ? 'Hide Sales Grid' : 'Show Sales Grid'}
+        </Button>
       </Stack>
 
       <TableContainer
@@ -332,7 +387,15 @@ export const ECRComparisonTable = ({
                     </TableCell>
 
                     <TableCell sx={{ fontSize: '0.85rem', fontWeight: 600, border: '1px solid #000000' }}>
-                      {row.field}
+                      {getFriendlyFieldLabel(row.field) !== row.field ? (
+                        <Tooltip title={row.field} arrow placement="top-start">
+                          <Box component="span" sx={{ cursor: 'help', borderBottom: '1px dotted #90a4ae' }}>
+                            {getFriendlyFieldLabel(row.field)}
+                          </Box>
+                        </Tooltip>
+                      ) : (
+                        row.field
+                      )}
                     </TableCell>
 
                     <TableCell

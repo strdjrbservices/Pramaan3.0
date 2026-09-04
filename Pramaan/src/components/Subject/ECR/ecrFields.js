@@ -421,3 +421,90 @@ export const ecrAllSectionFieldsMap = {
   'ANTICIPATED_SALES_PRICE': ecrAnticipatedSalesPriceFields,
   'CERTIFICATION': ecrCertificationFields
 };
+
+export const COMMON_PREFIXES = [
+  'tax year:', 'tax year', 'data source:', 'source:',
+  'monthly hoa fees:', 'hoa fees:', 'fees:', 'fee:',
+  'original list price:', 'current list price:', 'last sale price:', 'price:',
+  'date of last price revision:', 'revision date:', 'revision:', 'rev date:',
+  'days-on-market:', 'days on market:', 'dom:',
+  'listing company/agent:', 'company/agent:', 'company:', 'agent:',
+  'ph. #:', 'phone:', 'ph:', 'ph #:',
+  'last sale date:', 'sale date:', 'date:',
+  'gross living area:', 'gla:', 'site area:', 'actual age:',
+  'single family:', 'multi-family:', 'multifamily:', 'commercial:', 'industrial:', 'condo:', 'present land use:', 'land use:',
+  'single-family price range: $', 'price range: $', 'range: $', 'range:', 'range',
+  'single-family age:', 'single-family age', 'age:', 'age', 'to: $', 'to:', 'to', 'predominant:',
+  'inspection:', 'inspection', '(effective date):', '(effective date)', 'effective date:', 'effective date',
+  'license/certification #:', 'license/certification:', 'license/certification', 'license:', 'certification:',
+  '(yrs.):', '(yrs):', '(yrs.)', '(yrs)', 'description:', 'reference:', '#:',
+  'annual real estate taxes:', 'real estate taxes:', 'taxes:', 'tax:',
+  'street surface:', 'driveway surface:', 'surface:',
+  'year built:', 'built:',
+  'no. of stories:', 'stories:',
+  'no. of units:', 'units:', 's:',
+  'architectural style:', 'style:',
+  'roofing material:', 'wall material:', 'material:',
+  'window type:', 'type:'
+];
+
+export const stripPrefix = (val, field = '') => {
+  if (val === undefined || val === null) return '';
+  let s = String(val).trim();
+  if (!s) return '';
+
+  let lower = s.toLowerCase();
+  for (const p of COMMON_PREFIXES) {
+    if (lower.startsWith(p)) {
+      s = s.slice(p.length).trim();
+      lower = s.toLowerCase();
+    }
+  }
+
+  // Strip trailing column headers that bled through from next column
+  s = s.replace(/\s+(?:Floors?|Carpet|Vinyl|Tile|Wood|Walls?|Drywall|Plaster|Other)\s*[:-]*$/i, '').trim();
+
+  if (field) {
+    const fieldClean = field.replace(/[:$#()/-]/g, '').trim().toLowerCase();
+    if (fieldClean && fieldClean.length > 3) {
+      if (lower.startsWith(fieldClean + ':')) {
+        s = s.slice(fieldClean.length + 1).trim();
+      } else if (lower.startsWith(fieldClean)) {
+        s = s.slice(fieldClean.length).trim();
+      }
+    }
+  }
+
+  return s;
+};
+
+export const normalize = (val, field = '') => {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'object') {
+    return JSON.stringify(val);
+  }
+  const stripped = stripPrefix(val, field);
+  let norm = stripped.trim().toLowerCase().replace(/[\s,$():./-]/g, '');
+
+  const staticPrompts = [
+    'simpleleaseholdsubtypepudcondominiumcooperative',
+    'cooperativeindicatecomplexname',
+    'miniumorcooperativeindicatecomplexnamena',
+    'miniumorcooperativeindicatecomplexname',
+    'ismarketratefinancingavailableyesno',
+    'ofthehomeownersassociation',
+    'controlofthehomeownersassociation',
+    'anymarketabilityissuesyes',
+    'arethereanymarketabilityissues'
+  ];
+  if (staticPrompts.includes(norm)) {
+    return '';
+  }
+
+  if (norm === 'none' || norm === 'no' || norm === 'na' || norm === 'n/a' || norm === '0' || norm === '00' || norm === '000') {
+    if (field && (field.toLowerCase().includes('fee') || field.toLowerCase().includes('concession') || field.toLowerCase().includes('price') || field.toLowerCase().includes('hoa'))) {
+      return '0';
+    }
+  }
+  return norm;
+};

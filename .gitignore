@@ -30,3 +30,12 @@ yarn-error.log*
 .idea/
 .DS_Store
 Thumbs.db
+
+# Archives & Temporary Uploads
+*.zip
+*.tar.gz
+**/media/uploads/*
+!**/media/uploads/.gitkeep
+**/Downloads/error_screenshots/*
+!**/Downloads/error_screenshots/.gitkeep
+

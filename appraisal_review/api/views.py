@@ -22,6 +22,7 @@ from .pdf_extractor import (
     compare_documents,
 )
 from .pdf_extractor_offline import extract_fields_from_pdf_offline
+from .pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
 
 import threading
 import shutil
@@ -733,9 +734,20 @@ def extract_pdf(request):
         tmp_path = _save_temp_file(file)
 
         try:
+            form_type_str = str(form_type or "").strip().upper()
             if not custom_prompt:
                 # 100% Offline Pure Python Extraction (Fast & $0.00 cost)
+                if form_type_str in ["ECR", "ERC", "WORLDWIDE ERC"]:
+                    offline_data = extract_fields_from_pdf_ecr_offline(tmp_path)
+                    if offline_data.get("status") == "success":
+                        return Response(offline_data)
+                
                 offline_data = extract_fields_from_pdf_offline(tmp_path)
+                if offline_data.get("status") == "success":
+                    return Response(offline_data)
+
+                # Auto-fallback to ECR offline if Form 1004 did not match
+                offline_data = extract_fields_from_pdf_ecr_offline(tmp_path)
                 if offline_data.get("status") == "success":
                     return Response(offline_data)
 
