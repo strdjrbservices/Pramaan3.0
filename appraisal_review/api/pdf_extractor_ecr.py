@@ -9,14 +9,26 @@ from bs4 import BeautifulSoup
 import re
 from PyPDF2 import PdfReader, PdfWriter
 import io
+from typing import Any, Dict, List, Optional
 
-from .pdf_extractor import (
-    _check_for_api_error_message,
-    sanitize_extracted_data,
-    make_flat_schema,
-    custom_checklist_schema,
-    GENERAL_INSTRUCTIONS,
-)
+try:
+    from api.pdf_extractor import (
+        ACTIVE_API_KEY,
+        _check_for_api_error_message,
+        sanitize_extracted_data,
+        make_flat_schema,
+        custom_checklist_schema,
+        GENERAL_INSTRUCTIONS,
+    )
+except (ImportError, ModuleNotFoundError):
+    from .pdf_extractor import (  # type: ignore
+        ACTIVE_API_KEY,
+        _check_for_api_error_message,
+        sanitize_extracted_data,
+        make_flat_schema,
+        custom_checklist_schema,
+        GENERAL_INSTRUCTIONS,
+    )
 
 
 SUMMARY_FIELDS = [
@@ -421,7 +433,7 @@ ECR_CATEGORIES = {
     "CERTIFICATION": CERTIFICATION_FIELDS
 }
 
-ECR_EXTRACTION_STEPS = [
+ECR_EXTRACTION_STEPS: list[dict[str, Any]] = [
     {
         "step_num": 1,
         "name": "General, Subject, Neighborhood & Site Info",
@@ -456,7 +468,7 @@ def _build_multi_category_schema(categories: list) -> dict:
     }
 
 
-def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: str = None, prompt_type: str = "checklist"):
+def extract_fields_from_pdf_ecr(pdf_path, category: str | None = None, custom_prompt: str | None = None, prompt_type: str = "checklist"):
     """
     Extracts structured fields from an ECR appraisal PDF using Gemini File API & Caching.
     - If custom_prompt is provided: executes custom query or checklist verification.
@@ -469,15 +481,37 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
     uploaded_file = None
     cache = None
     try:
+        if not ACTIVE_API_KEY:
+            return {'error': 'Configuration Error', 'message': 'Gemini API key is not configured.'}
+        genai.configure(api_key=ACTIVE_API_KEY)
+
         print("[ECR] Uploading PDF to Gemini File API...")
         uploaded_file = genai.upload_file(pdf_path, mime_type="application/pdf")
 
-        print("[ECR] Creating Gemini Cache for ECR...")
-        cache = caching.CachedContent.create(
-            model='models/gemini-3.5-flash',
-            contents=[uploaded_file],
-            ttl=datetime.timedelta(minutes=15)
-        )
+        print("[ECR] Creating Gemini Cache with gemini-3.5-flash for ECR...")
+        try:
+            cache = caching.CachedContent.create(
+                model='models/gemini-3.5-flash',
+                contents=[uploaded_file],
+                ttl=datetime.timedelta(minutes=15)
+            )
+        except Exception as err:
+            try:
+                cache = caching.CachedContent.create(
+                    model='models/gemini-2.5-flash',
+                    contents=[uploaded_file],
+                    ttl=datetime.timedelta(minutes=15)
+                )
+            except Exception:
+                try:
+                    cache = caching.CachedContent.create(
+                        model='models/gemini-1.5-flash',
+                        contents=[uploaded_file],
+                        ttl=datetime.timedelta(minutes=15)
+                    )
+                except Exception as cache_err:
+                    print(f"[ECR] Cache creation failed ({cache_err}). Falling back to direct model execution.")
+                    cache = None
 
         # 1. Custom Prompt / Checklist Handler
         if custom_prompt:
@@ -487,14 +521,17 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
             elif prompt_type == "general":
                 response_schema = None
 
-            generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
             if response_schema:
-                generation_config["response_schema"] = response_schema
-
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
-            )
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            else:
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
 
             if prompt_type == "direct":
                 final_prompt = custom_prompt
@@ -518,9 +555,23 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
                     ---
                     Your response must be a single, clean JSON object with 'summary' and 'comparison_summary' array.
                 """)
+
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+                contents_payload = [final_prompt]
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
+                contents_payload = [uploaded_file, final_prompt]
+
+            raw_text = ""
             try:
-                raw_text = ""
-                response = model.generate_content(contents=[final_prompt], request_options={"timeout": 600.0})
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = response.text
                 if _check_for_api_error_message(raw_text, response.prompt_feedback):
                     return {'error': 'Gemini API Error', 'message': raw_text, 'raw': raw_text}
@@ -538,29 +589,40 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
             if cat_upper in ECR_CATEGORIES:
                 fields_list = ECR_CATEGORIES[cat_upper]
                 response_schema = make_flat_schema(fields_list)
-                generation_config = {
-                    "temperature": 0.0,
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema
-                }
-                model = genai.GenerativeModel.from_cached_content(
-                    cached_content=cache,
-                    generation_config=generation_config
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
                 )
-                prompt = textwrap.dedent(f"""\
+                cat_prompt = textwrap.dedent(f"""\
                     You are an expert real estate appraisal data extractor for ECR (Exterior / Evaluation Condition Report) forms.
-                    Extract data from the PDF for the '{cat_upper}' section based on the following instructions.
+                    Task: Extract all structured information for section: {cat_upper}.
 
                     {GENERAL_INSTRUCTIONS}
 
-                    <category_name>{cat_upper}</category_name>
                     <fields_to_extract>
-                    {fields_list}
+                    {json.dumps(fields_list, indent=2)}
                     </fields_to_extract>
 
-                    Extract and return a single valid JSON object containing exactly the fields requested above.
+                    **CRITICAL INSTRUCTIONS:**
+                    1. Return a single JSON object containing only the fields specified above.
+                    2. Clean numeric fields (digits only for monetary values) and format dates as MM/DD/YYYY.
+                    3. For checkboxes or selection options, return the selected choice text.
+                    4. Do not include markdown code block formatting or explanations outside the JSON object.
                 """)
-                response = model.generate_content(contents=[prompt], request_options={"timeout": 600.0})
+                if cache:
+                    model = genai.GenerativeModel.from_cached_content(
+                        cached_content=cache,
+                        generation_config=generation_config
+                    )
+                    contents_payload = [cat_prompt]
+                else:
+                    model = genai.GenerativeModel(
+                        model_name='gemini-3.5-flash',
+                        generation_config=generation_config
+                    )
+                    contents_payload = [uploaded_file, cat_prompt]
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = response.text
                 raw_responses.append(f"--- ECR {cat_upper} SECTION ---\n{raw_text}")
                 json_str = raw_text.strip().lstrip('```json').rstrip('```').strip()
@@ -573,23 +635,18 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
         # 3. Full Document Extraction via 3 Clean, Structured Steps
         print("[ECR] Starting 3-step structured full document extraction...")
         for step_info in ECR_EXTRACTION_STEPS:
-            step_num = step_info["step_num"]
-            step_name = step_info["name"]
-            step_categories = step_info["categories"]
-            step_desc = step_info["description"]
+            step_num: int = int(step_info["step_num"])
+            step_name: str = str(step_info["name"])
+            step_categories: list[str] = list(step_info["categories"])
+            step_desc: str = str(step_info["description"])
 
             print(f"[ECR] Executing Step {step_num}/3: {step_name} ({', '.join(step_categories)})...")
             response_schema = _build_multi_category_schema(step_categories)
 
-            generation_config = {
-                "temperature": 0.0,
-                "response_mime_type": "application/json",
-                "response_schema": response_schema
-            }
-
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
+            generation_config = genai.GenerationConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+                response_schema=response_schema,
             )
 
             fields_spec = {}
@@ -615,9 +672,22 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
                 5. Do not include markdown code block formatting or explanations outside the JSON object.
             """)
 
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+                contents_payload = [prompt]
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
+                contents_payload = [uploaded_file, prompt]
+
             try:
                 response = model.generate_content(
-                    contents=[prompt],
+                    contents=contents_payload,
                     request_options={"timeout": 600.0}
                 )
                 raw_text = response.text
@@ -670,7 +740,7 @@ def extract_fields_from_pdf_ecr(pdf_path, category: str = None, custom_prompt: s
     return {'fields': combined_result, 'raw': "\n\n".join(raw_responses)}
 
 
-def compare_documents_ecr(original_path: str, revised_path: str, revision_request: str = None) -> dict:
+def compare_documents_ecr(original_path: str, revised_path: str, revision_request: str | None = None) -> dict:
     """
     Compares an Original ECR PDF and a Revised ECR PDF in 3 structured, high-accuracy steps:
       Step 1: Subject, Location, Legal/Tax & Site Information Diff
@@ -694,7 +764,7 @@ def compare_documents_ecr(original_path: str, revised_path: str, revision_reques
 
         model = genai.GenerativeModel(
             model_name="gemini-3.5-flash",
-            generation_config={"temperature": 0.0, "response_mime_type": "application/json"}
+            generation_config=genai.GenerationConfig(temperature=0.0, response_mime_type="application/json")
         )
 
         # Handle custom revision request / checklist
@@ -786,7 +856,11 @@ def compare_documents_ecr(original_path: str, revised_path: str, revision_reques
 
         diff_model = genai.GenerativeModel(
             model_name="gemini-3.5-flash",
-            generation_config={"temperature": 0.0, "response_mime_type": "application/json", "response_schema": diff_item_schema}
+            generation_config=genai.GenerationConfig(
+                temperature=0.0,
+                response_mime_type="application/json",
+                response_schema=diff_item_schema
+            )
         )
 
         for d_step in diff_steps:

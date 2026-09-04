@@ -3292,7 +3292,6 @@ function Subject({ defaultFormType }) {
     const formData = new FormData();
     formData.append('file', selectedFile);
     formData.append('form_type', selectedFormType);
-    formData.append('comment', ADU_REQUIREMENTS_PROMPT);
     formData.append('comment', FHA_REQUIREMENTS_PROMPT);
 
     try {

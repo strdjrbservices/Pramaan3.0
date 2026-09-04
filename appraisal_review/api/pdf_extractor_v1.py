@@ -9,32 +9,61 @@ from bs4 import BeautifulSoup
 import re
 from PyPDF2 import PdfReader, PdfWriter
 import io
+from typing import Any, Dict, List, Optional
 
-from .pdf_extractor import (
-    _check_for_api_error_message,
-    sanitize_extracted_data,
-    make_flat_schema,
-    INCOME_APPROACH_FIELDS,
-    RENT_SCHEDULE_RECONCILIATION_FIELDS,
-    PUD_INFO_FIELDS,
-    ADDENDUM_FIELDS,
-    SALES_TRANSFER_FIELDS,
-    MARKET_CONDITIONS_FIELDS,
-    INFO_OF_SALES_FIELDS,
-    CONDO_FIELDS,
-    Project_SITE_FIELDS,
-    Project_Info_FIELDS,
-    CONDO_FORECLOSURE_FIELDS,
-    Project_Analysis_FIELDS,
-    UNIT_DESCRIPTIONS_FIELDS,
-    DATA_CONSISTENCY_FIELDS,
-    COMPARABLE_RENTAL_DATA_FIELDS,
-    SUBJECT_RENT_SCHEDULE,
-    custom_checklist_schema,
-    RentSchedulesFIELDS2,
-    GENERAL_INSTRUCTIONS,
-    CATEGORY_SPECIFIC_INSTRUCTIONS,
-)
+try:
+    from api.pdf_extractor import (
+        ACTIVE_API_KEY,
+        _check_for_api_error_message,
+        sanitize_extracted_data,
+        make_flat_schema,
+        INCOME_APPROACH_FIELDS,
+        RENT_SCHEDULE_RECONCILIATION_FIELDS,
+        PUD_INFO_FIELDS,
+        SALES_TRANSFER_FIELDS,
+        MARKET_CONDITIONS_FIELDS,
+        INFO_OF_SALES_FIELDS,
+        CONDO_FIELDS,
+        Project_SITE_FIELDS,
+        Project_Info_FIELDS,
+        CONDO_FORECLOSURE_FIELDS,
+        Project_Analysis_FIELDS,
+        UNIT_DESCRIPTIONS_FIELDS,
+        COMPARABLE_RENTAL_DATA_FIELDS,
+        SUBJECT_RENT_SCHEDULE,
+        custom_checklist_schema,
+        RentSchedulesFIELDS2,
+        GENERAL_INSTRUCTIONS,
+        CATEGORY_SPECIFIC_INSTRUCTIONS,
+    )
+except (ImportError, ModuleNotFoundError):
+    from .pdf_extractor import (  # type: ignore
+        ACTIVE_API_KEY,
+        _check_for_api_error_message,
+        sanitize_extracted_data,
+        make_flat_schema,
+        INCOME_APPROACH_FIELDS,
+        RENT_SCHEDULE_RECONCILIATION_FIELDS,
+        PUD_INFO_FIELDS,
+        SALES_TRANSFER_FIELDS,
+        MARKET_CONDITIONS_FIELDS,
+        INFO_OF_SALES_FIELDS,
+        CONDO_FIELDS,
+        Project_SITE_FIELDS,
+        Project_Info_FIELDS,
+        CONDO_FORECLOSURE_FIELDS,
+        Project_Analysis_FIELDS,
+        UNIT_DESCRIPTIONS_FIELDS,
+        COMPARABLE_RENTAL_DATA_FIELDS,
+        SUBJECT_RENT_SCHEDULE,
+        custom_checklist_schema,
+        RentSchedulesFIELDS2,
+        GENERAL_INSTRUCTIONS,
+        CATEGORY_SPECIFIC_INSTRUCTIONS,
+    )
+
+ADDENDUM_FIELDS = []
+DATA_CONSISTENCY_FIELDS = []
 
 SUMMARY_FIELDS = [
     'ADU File Check','From Type','Exposure comment','Prior service comment','ANSI','FHA Case No.','Opinion of Market Value', 'Market Value Condition', 'Effective Date of Appraisal', 'Assignment Reason',
@@ -203,25 +232,47 @@ CERTIFICATION_FIELDS = [
 ]
 
 
-def extract_fields_from_pdf_v1(pdf_path, category: str = None, custom_prompt: str = None, prompt_type: str = "checklist"):
+def extract_fields_from_pdf_v1(pdf_path, category: str | None = None, custom_prompt: str | None = None, prompt_type: str = "checklist"):
     combined_result = {}
     raw_responses = []
     
     uploaded_file = None
     cache = None
     try:
+        if not ACTIVE_API_KEY:
+            return {'error': 'Configuration Error', 'message': 'Gemini API key is not configured.'}
+        genai.configure(api_key=ACTIVE_API_KEY)
+
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
 
         print("Uploading PDF to Gemini File API for caching (v1)...")
         uploaded_file = genai.upload_file(pdf_path, mime_type="application/pdf")
         
-        print("Creating Gemini Cache (v1)...")
-        cache = caching.CachedContent.create(
-            model='models/gemini-3.5-flash',
-            contents=[uploaded_file],
-            ttl=datetime.timedelta(minutes=15)
-        )
+        print("Creating Gemini Cache with gemini-3.5-flash (v1)...")
+        try:
+            cache = caching.CachedContent.create(
+                model='models/gemini-3.5-flash',
+                contents=[uploaded_file],
+                ttl=datetime.timedelta(minutes=15)
+            )
+        except Exception as err:
+            try:
+                cache = caching.CachedContent.create(
+                    model='models/gemini-2.5-flash',
+                    contents=[uploaded_file],
+                    ttl=datetime.timedelta(minutes=15)
+                )
+            except Exception:
+                try:
+                    cache = caching.CachedContent.create(
+                        model='models/gemini-1.5-flash',
+                        contents=[uploaded_file],
+                        ttl=datetime.timedelta(minutes=15)
+                    )
+                except Exception as cache_err:
+                    print(f"Cache creation failed ({cache_err}). Falling back to direct model execution.")
+                    cache = None
 
         if custom_prompt:
             response_schema = None
@@ -230,14 +281,17 @@ def extract_fields_from_pdf_v1(pdf_path, category: str = None, custom_prompt: st
             elif prompt_type == "general":
                 response_schema = None
 
-            generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
             if response_schema:
-                generation_config["response_schema"] = response_schema
-
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
-            )
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            else:
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
 
             if prompt_type == "direct":
                 final_prompt = custom_prompt
@@ -267,9 +321,23 @@ def extract_fields_from_pdf_v1(pdf_path, category: str = None, custom_prompt: st
                     The 'comparison_summary' value must be an array of objects. For each item in the checklist, create an object with three keys: 'status' ('Fulfilled' or 'Not Fulfilled'), 'section' (the relevant section from the checklist), and 'comment' (a brief explanation of your finding).
                     Do not include any introductory text, explanations, or markdown formatting like ```json.
                 """)
+
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+                contents_payload = [final_prompt]
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
+                contents_payload = [uploaded_file, final_prompt]
+
+            raw_text = ""
             try:
-                raw_text = ""
-                response = model.generate_content(contents=[final_prompt], request_options={"timeout": 600.0})
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = response.text
                 if _check_for_api_error_message(raw_text, response.prompt_feedback):
                     return {'error': 'Gemini API Error', 'message': raw_text, 'raw': raw_text}
@@ -313,14 +381,28 @@ def extract_fields_from_pdf_v1(pdf_path, category: str = None, custom_prompt: st
             elif category_name in field_categories:
                 response_schema = make_flat_schema(field_categories[category_name])
 
-            generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
             if response_schema:
-                generation_config["response_schema"] = response_schema
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            else:
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
 
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
-            )
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
 
             prompt = ""
             if category_name == "SALES_GRID":
@@ -415,7 +497,8 @@ def extract_fields_from_pdf_v1(pdf_path, category: str = None, custom_prompt: st
             else:
                 continue
             try:
-                response = model.generate_content(contents=[prompt], request_options={"timeout": 600.0})
+                contents_payload = [prompt] if cache else [uploaded_file, prompt]
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = ""
                 try:
                     if not response.parts:

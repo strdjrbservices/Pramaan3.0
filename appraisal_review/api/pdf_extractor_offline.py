@@ -438,40 +438,111 @@ def get_words_in_box(words, x0, top, x1, bottom, strip_labels=True):
 find_words_in_box = get_words_in_box
 
 
-CHECK_GLYPHS = {"8", "X", "x", "☒", "☑", "✓", "✔", "[X]", "[x]", "(X)", "(x)", "4", "ý", "ü", "n", "q", "r", "■", "•"}
+CHECK_GLYPHS = {
+    "8", "X", "x", "☒", "☑", "✓", "✔", "[X]", "[x]", "(X)", "(x)", "[8]", "[4]", "4",
+    "ý", "ü", "n", "q", "r", "■", "•", "Y", "V", "X.", "8.", "x.", "□", "▣"
+}
 
 def is_glyph_check(text):
     if not text:
         return False
     t = text.strip()
-    if t in CHECK_GLYPHS or t.strip(' \t\n\r:;.,[]()').upper() in {"X", "8", "4", "Y", "V"}:
+    if t in CHECK_GLYPHS or t.strip(' \t\n\r:;.,[]()').upper() in {"X", "8", "4", "Y", "V", "■", "•"}:
         return True
-    return len(t) == 1 and ord(t) in [0x2611, 0x2612, 0x2713, 0x2714, 0x274c, 0xf078, 0xf0fc, 0xf0fe]
+    if any(ord(c) in [0x2611, 0x2612, 0x2713, 0x2714, 0x274c, 0x25a0, 0x25a1, 0x25a2, 0x25aa, 0x25ab, 0xf078, 0xf0fc, 0xf0fe, 0xf0fd] for c in t):
+        return True
+    if re.match(r'^(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])', t):
+        return True
+    return False
 
 
 def check_mark_in_box(words, x0, top, x1, bottom):
     """Checks if a checkmark glyph (8, X, x, ☒, ☑, ✓, etc.) is inside the box."""
     for w in words:
-        if w['x0'] >= x0 - 6 and w['x1'] <= x1 + 6 and w['top'] >= top - 6 and w['bottom'] <= bottom + 6:
+        if w['x0'] >= x0 - 8 and w['x1'] <= x1 + 8 and w['top'] >= top - 8 and w['bottom'] <= bottom + 8:
             if is_glyph_check(w['text']):
                 return True
     return False
 
-def extract_choice_from_row(words, y_target, options, x_min=0, x_max=600, default_val=None, y_band=None):
+def check_box_vector_graphics(page, fitz_page, x0, top, x1, bottom):
+    """Checks if there are vector line drawings or curves forming a checkmark inside a box."""
+    # 1. pdfplumber page.lines & page.curves
+    if page:
+        try:
+            lines = getattr(page, 'lines', [])
+            for l in lines:
+                if not (l['x1'] < x0 - 2 or l['x0'] > x1 + 2 or l['bottom'] < top - 2 or l['top'] > bottom + 2):
+                    w_l = abs(l['x1'] - l['x0'])
+                    h_l = abs(l['bottom'] - l['top'])
+                    if 1.0 <= w_l <= 25 and 1.0 <= h_l <= 25:
+                        return True
+            curves = getattr(page, 'curves', [])
+            for c in curves:
+                if not (c['x1'] < x0 - 2 or c['x0'] > x1 + 2 or c['bottom'] < top - 2 or c['top'] > bottom + 2):
+                    w_c = abs(c['x1'] - c['x0'])
+                    h_c = abs(c['bottom'] - c['top'])
+                    if 1.0 <= w_c <= 25 and 1.0 <= h_c <= 25:
+                        return True
+        except Exception:
+            pass
+
+    # 2. PyMuPDF fitz_page.get_drawings()
+    if fitz_page:
+        try:
+            drawings = fitz_page.get_drawings()
+            for d in drawings:
+                r = d.get("rect")
+                if not r:
+                    continue
+                if not (r[2] < x0 - 2 or r[0] > x1 + 2 or r[3] < top - 2 or r[1] > bottom + 2):
+                    w_box = r[2] - r[0]
+                    h_box = r[3] - r[1]
+                    if 1.0 <= w_box <= 25 and 1.0 <= h_box <= 25:
+                        items = d.get("items", [])
+                        if len(items) >= 2 or any(it[0] in ['l', 'c', 'qu'] for it in items):
+                            return True
+        except Exception:
+            pass
+
+    return False
+
+
+def extract_choice_from_row(words, y_target, options, x_min=0, x_max=600, default_val=None, y_band=None, page=None, fitz_page=None):
     """
-    Finds which option is checked on a row using both label-proximity and bounding-box fallback.
+    Finds which option is checked on a row using vector graphics inspection, attached glyph check,
+    label-proximity, and bounding-box fallback.
     options: list of (value, [keyword_labels], (box_x0, box_x1))
     """
+    y_top_chk = (y_band[0] - 2.0) if y_band else (y_target - 5.0)
+    y_btm_chk = (y_band[1] + 2.0) if y_band else (y_target + 9.0)
+
+    # 1. Vector graphics detection in checkbox boxes (e.g. drawn lines/X/curves)
+    if page or fitz_page:
+        for val, kw_list, (bx0, bx1) in options:
+            if check_box_vector_graphics(page, fitz_page, bx0 - 4, y_top_chk, bx1 + 4, y_btm_chk):
+                return val
+
+    # 2. Direct word prefix / attached glyph check (e.g. "[X]Owner", "☒Owner", "XOwner", "8Owner")
+    for w in words:
+        if y_band and not (y_band[0] - 4.0 <= w['top'] <= y_band[1] + 4.0):
+            continue
+        if not y_band and abs(w['top'] - y_target) > 8.0:
+            continue
+        if not (x_min - 20 <= w['x0'] <= x_max + 20):
+            continue
+        w_text_lower = w['text'].lower()
+        for val, kw_list, (bx0, bx1) in options:
+            for kw in kw_list:
+                kw_l = kw.lower()
+                if kw_l in w_text_lower and (is_glyph_check(w['text']) or any(c in w['text'] for c in ['[X]', '[x]', '☒', '☑', '✓', '■'])):
+                    return val
+
+    # 3. Collect check mark glyph words in the row
     if y_band:
         y_min_b, y_max_b = y_band
-        row_checks = [w for w in words if is_glyph_check(w['text']) and y_min_b <= w['top'] <= y_max_b and x_min - 10 <= w['x0'] <= x_max + 10]
+        row_checks = [w for w in words if is_glyph_check(w['text']) and (y_min_b - 5.0 <= w['top'] <= y_max_b + 5.0) and x_min - 20 <= w['x0'] <= x_max + 20]
     else:
-        row_checks = [w for w in words if is_glyph_check(w['text']) and abs(w['top'] - y_target) <= 5.0 and x_min - 10 <= w['x0'] <= x_max + 10]
-        if not row_checks:
-            row_checks = [w for w in words if is_glyph_check(w['text']) and abs(w['top'] - y_target) <= 7.0 and x_min - 10 <= w['x0'] <= x_max + 10]
-
-    if not row_checks:
-        return default_val
+        row_checks = [w for w in words if is_glyph_check(w['text']) and abs(w['top'] - y_target) <= 8.0 and x_min - 20 <= w['x0'] <= x_max + 20]
 
     for cw in row_checks:
         best_match = None
@@ -480,28 +551,40 @@ def extract_choice_from_row(words, y_target, options, x_min=0, x_max=600, defaul
             for kw in kw_list:
                 pattern = r'\b' + re.escape(kw.lower()) + r'\b'
                 for w in words:
-                    if y_band and not (y_band[0] <= w['top'] <= y_band[1] + 3):
+                    if y_band and not (y_band[0] - 5.0 <= w['top'] <= y_band[1] + 5.0):
                         continue
-                    if not y_band and abs(w['top'] - y_target) > 6.0:
+                    if not y_band and abs(w['top'] - y_target) > 8.0:
                         continue
-                    if re.search(pattern, w['text'].lower()) and x_min <= w['x0'] <= x_max:
-                        dist = w['x0'] - cw['x0']
-                        if -4 <= dist <= 32 and dist < best_dist:
-                            best_dist = dist
+                    if re.search(pattern, w['text'].lower()) and x_min - 20 <= w['x0'] <= x_max + 20:
+                        # Checkbox to the left of the label
+                        dist_left = w['x0'] - cw['x0']
+                        if -5 <= dist_left <= 55 and dist_left < best_dist:
+                            best_dist = dist_left
                             best_match = val
+                        # Checkbox to the right of the label
+                        dist_right = cw['x0'] - w['x1']
+                        if -5 <= dist_right <= 35 and dist_right < best_dist:
+                            best_dist = dist_right
+                            best_match = val
+
         if best_match is not None:
             return best_match
 
         for val, kw_list, (bx0, bx1) in options:
-            if bx0 - 10 <= cw['x0'] <= bx1 + 10:
+            if bx0 - 20 <= cw['x0'] <= bx1 + 20:
                 return val
+
+    # 4. Check if any checkbox bounding box contains words with a check glyph
+    for val, kw_list, (bx0, bx1) in options:
+        if check_mark_in_box(words, bx0 - 4, y_top_chk, bx1 + 4, y_btm_chk):
+            return val
 
     return default_val
 
 
 
 
-def extract_page_1_fields(page, full_doc_text=""):
+def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     """Extracts clean fields for SUBJECT, CONTRACT, NEIGHBORHOOD, and SITE dynamically."""
     words = page.extract_words()
     txt = page.extract_text() or ""
@@ -548,8 +631,13 @@ def extract_page_1_fields(page, full_doc_text=""):
 
     subject["Full Address"] = f"{subject['Property Address']}, {subject['City']}, {subject['State']} {subject['Zip Code']}".strip(", ")
 
-    subject["Borrower"] = get_val(50, y_borrower - 4, 210, y_borrower + 10)
-    subject["Owner of Public Record"] = get_val(230, y_borrower - 4, 450, y_borrower + 10)
+    subject["Borrower"] = get_val(50, y_borrower - 4, 220, y_borrower + 10)
+    
+    val_owner = get_val(210, y_borrower - 4, 460, y_borrower + 10)
+    val_owner = re.sub(r'^(?:Owner\s*of\s*Public\s*Record\s*[:\-]*\s*)', '', val_owner, flags=re.IGNORECASE)
+    val_owner = re.sub(r'(?:\s+County.*)$', '', val_owner, flags=re.IGNORECASE).strip()
+    subject["Owner of Public Record"] = val_owner
+    
     subject["County"] = get_val(450, y_borrower - 4, 580, y_borrower + 10)
 
     subject["Legal Description"] = get_val(70, y_legal - 4, 580, y_legal + 10)
@@ -562,50 +650,104 @@ def extract_page_1_fields(page, full_doc_text=""):
     subject["Map Reference"] = get_val(290, y_neigh - 4, 450, y_neigh + 10)
     subject["Census Tract"] = get_val(450, y_neigh - 4, 580, y_neigh + 10)
 
-    # Occupant with strict vertical band
+    # Occupant with strict vertical band + vector graphics & text fallback
     band_occ = ((y_neigh + y_occ) / 2.0, (y_occ + y_pr) / 2.0)
     occ_opts = [
-        ("Owner", ["Owner"], (50, 75)),
-        ("Tenant", ["Tenant"], (90, 120)),
-        ("Vacant", ["Vacant"], (130, 165))
+        ("Owner", ["Owner"], (55, 78)),
+        ("Tenant", ["Tenant"], (125, 148)),
+        ("Vacant", ["Vacant"], (190, 215))
     ]
-    subject["Occupant"] = extract_choice_from_row(words, y_occ, occ_opts, 25, 200, default_val="", y_band=band_occ) or ""
+    occ_val = extract_choice_from_row(words, y_occ, occ_opts, 25, 250, default_val="", y_band=band_occ, page=page, fitz_page=fitz_page)
+    if not occ_val:
+        occ_line_m = re.search(r'Occupant\s*(.*?)(?:Special\s*Assessments|$)', txt, re.IGNORECASE)
+        occ_str = occ_line_m.group(1) if occ_line_m else txt
+        if re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Owner', occ_str, re.IGNORECASE) or ("owner" in occ_str.lower() and not ("tenant" in occ_str.lower() and "vacant" in occ_str.lower())):
+            occ_val = "Owner"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Tenant', occ_str, re.IGNORECASE):
+            occ_val = "Tenant"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Vacant', occ_str, re.IGNORECASE):
+            occ_val = "Vacant"
+    subject["Occupant"] = occ_val or ""
 
     subject["Special Assessments $"] = get_val(285, y_occ - 4, 400, y_occ + 10)
-    pud_check = extract_choice_from_row(words, y_occ, [("Yes", ["PUD"], (390, 425))], 350, 450, default_val="", y_band=band_occ)
+    pud_check = extract_choice_from_row(words, y_occ, [("Yes", ["PUD"], (390, 425))], 350, 450, default_val="", y_band=band_occ, page=page, fitz_page=fitz_page)
     subject["PUD"] = "Yes" if (pud_check == "Yes" or check_mark_in_box(words, 390, y_occ - 6, 425, y_occ + 8)) else "No"
     subject["HOA $"] = get_val(440, y_occ - 4, 510, y_occ + 10)
 
-    # Property Rights with strict vertical band
+    # Property Rights with strict vertical band + vector graphics & text fallback
     band_pr = ((y_occ + y_pr) / 2.0, (y_pr + y_asgn) / 2.0)
     pr_opts = [
-        ("Fee Simple", ["Fee Simple", "Fee", "Simple"], (95, 130)),
-        ("Leasehold", ["Leasehold"], (155, 190)),
-        ("Other", ["Other"], (215, 250))
+        ("Fee Simple", ["Fee Simple", "Fee", "Simple"], (145, 170)),
+        ("Leasehold", ["Leasehold"], (245, 270)),
+        ("Other", ["Other"], (335, 360))
     ]
-    subject["Property Rights Appraised"] = extract_choice_from_row(words, y_pr, pr_opts, 25, 300, default_val="", y_band=band_pr) or ""
+    pr_val = extract_choice_from_row(words, y_pr, pr_opts, 25, 400, default_val="", y_band=band_pr, page=page, fitz_page=fitz_page)
+    if not pr_val:
+        pr_line_m = re.search(r'Property\s*Rights\s*Appraised\s*(.*?)(?:Assignment\s*Type|$)', txt, re.IGNORECASE)
+        pr_str = pr_line_m.group(1) if pr_line_m else txt
+        if re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Fee\s*Simple', pr_str, re.IGNORECASE) or ("fee simple" in pr_str.lower() and not ("leasehold" in pr_str.lower() and "other" in pr_str.lower())):
+            pr_val = "Fee Simple"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Leasehold', pr_str, re.IGNORECASE):
+            pr_val = "Leasehold"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Other', pr_str, re.IGNORECASE):
+            pr_val = "Other"
+    subject["Property Rights Appraised"] = pr_val or ""
 
-    # Assignment Type with strict vertical band
+    # Assignment Type with strict vertical band + vector graphics & text fallback
     band_asgn = ((y_pr + y_asgn) / 2.0, (y_asgn + y_lender) / 2.0)
     asgn_opts = [
-        ("Purchase Transaction", ["Purchase"], (70, 105)),
-        ("Refinance Transaction", ["Refinance"], (155, 190)),
-        ("Other", ["Other"], (250, 280))
+        ("Purchase Transaction", ["Purchase"], (105, 130)),
+        ("Refinance Transaction", ["Refinance"], (260, 285)),
+        ("Other", ["Other"], (415, 440))
     ]
-    subject["Assignment Type"] = extract_choice_from_row(words, y_asgn, asgn_opts, 25, 350, default_val="", y_band=band_asgn) or ""
+    asgn_val = extract_choice_from_row(words, y_asgn, asgn_opts, 25, 450, default_val="", y_band=band_asgn, page=page, fitz_page=fitz_page)
+    if not asgn_val:
+        asgn_line_m = re.search(r'Assignment\s*Type\s*(.*?)(?:Lender\/Client|$)', txt, re.IGNORECASE)
+        asgn_str = asgn_line_m.group(1) if asgn_line_m else txt
+        if re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Purchase', asgn_str, re.IGNORECASE) or ("purchase" in asgn_str.lower() and not ("refinance" in asgn_str.lower() and "other" in asgn_str.lower())):
+            asgn_val = "Purchase Transaction"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Refinance', asgn_str, re.IGNORECASE):
+            asgn_val = "Refinance Transaction"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Other', asgn_str, re.IGNORECASE):
+            asgn_val = "Other"
+    subject["Assignment Type"] = asgn_val or ""
 
-    subject["Lender/Client"] = get_val(65, y_lender - 4, 230, y_lender + 10)
-    subject["Address (Lender/Client)"] = get_val(230, y_lender - 4, 580, y_lender + 10)
+    val_lc = get_val(65, y_lender - 4, 265, y_lender + 10)
+    val_lc = re.sub(r'^(?:Lender\s*\/\s*Client\s*[:\-]*\s*)', '', val_lc, flags=re.IGNORECASE)
+    val_lc = re.sub(r'(?:\s+Address.*)$', '', val_lc, flags=re.IGNORECASE).strip()
+    subject["Lender/Client"] = val_lc
 
-    # Offered for Sale with strict vertical band
+    val_lca = get_val(265, y_lender - 4, 580, y_lender + 10)
+    val_lca = re.sub(r'^(?:Address\s*[:\-]*\s*)', '', val_lca, flags=re.IGNORECASE).strip()
+    subject["Address (Lender/Client)"] = val_lca
+
+    # Offered for Sale with strict vertical band + vector graphics & text fallback
     band_offered = ((y_lender + y_offered) / 2.0, (y_offered + y_ds_offered) / 2.0)
     offered_opts = [
-        ("Yes", ["Yes"], (485, 510)),
-        ("No", ["No"], (520, 545))
+        ("Yes", ["Yes"], (485, 515)),
+        ("No", ["No"], (530, 560))
     ]
-    subject["Offered for Sale in Last 12 Months"] = extract_choice_from_row(
-        words, y_offered, offered_opts, 450, 580, default_val="", y_band=band_offered
-    ) or ""
+    offered_val = extract_choice_from_row(
+        words, y_offered, offered_opts, 450, 580, default_val="", y_band=band_offered, page=page, fitz_page=fitz_page
+    )
+    if not offered_val:
+        off_m = re.search(r'(?:offered\s*for\s*sale|twelve\s*months).*?(?:(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Yes|Yes\s*(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])|(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*No|No\s*(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8]))', txt, re.IGNORECASE)
+        if off_m:
+            matched_t = off_m.group(0).lower()
+            if "yes" in matched_t and any(k in matched_t for k in ["[x]", "[8]", "☒", "☑", "✓", "x yes", "8 yes"]):
+                offered_val = "Yes"
+            elif "no" in matched_t and any(k in matched_t for k in ["[x]", "[8]", "☒", "☑", "✓", "x no", "8 no"]):
+                offered_val = "No"
+    subject["Offered for Sale in Last 12 Months"] = offered_val or ""
+    if not offered_val:
+        off_m = re.search(r'(?:offered\s*for\s*sale|twelve\s*months).*?(?:(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Yes|Yes\s*(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])|(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*No|No\s*(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8]))', txt, re.IGNORECASE)
+        if off_m:
+            matched_t = off_m.group(0).lower()
+            if "yes" in matched_t and any(k in matched_t for k in ["[x]", "[8]", "☒", "☑", "✓", "x yes", "8 yes"]):
+                offered_val = "Yes"
+            elif "no" in matched_t and any(k in matched_t for k in ["[x]", "[8]", "☒", "☑", "✓", "x no", "8 no"]):
+                offered_val = "No"
+    subject["Offered for Sale in Last 12 Months"] = offered_val or ""
 
     subject["Report data source(s) used, offering price(s), and date(s)"] = get_val(28, y_offered + 8, 580, y_offered + 38, strip_labels=False).replace("Report data source(s) used, offering price(s), and date(s).", "").strip()
 
@@ -628,21 +770,36 @@ def extract_page_1_fields(page, full_doc_text=""):
     y_note = find_label_y(words, "Proration", max_x=120) or (y_if_yes + 20.0)
 
     did_choice = extract_choice_from_row(
-        words, y_did, [("did not", ["did not", "not"], (65, 110)), ("did", ["did"], (35, 65))], 25, 140, default_val=""
+        words, y_did, [("did", ["did"], (25, 48)), ("did not", ["did not", "not"], (55, 78))], 25, 140, default_val="", page=page, fitz_page=fitz_page
     )
+    if not did_choice:
+        if re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*did\s+not', txt, re.IGNORECASE):
+            did_choice = "did not"
+        elif re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*did\b', txt, re.IGNORECASE):
+            did_choice = "did"
     did_expl = get_val(28, y_did + 6, 580, y_sp - 2, strip_labels=False)
     contract["I did did not analyze the contract for sale for the subject purchase transaction. Explain the results of the analysis of the contract for sale or why the analysis was not performed."] = f"{did_choice}: {did_expl}".strip(": ") if did_choice else did_expl
     contract["Contract Price $"] = get_val(80, y_sp - 4, 210, y_sp + 10)
     contract["Date of Contract"] = get_val(260, y_sp - 4, 380, y_sp + 10)
 
-    contract["Is property seller owner of public record?"] = extract_choice_from_row(
-        words, y_owner, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (520, 550))], 470, 560, default_val=""
-    ) or ""
+    seller_owner = extract_choice_from_row(
+        words, y_owner, [("Yes", ["Yes"], (485, 515)), ("No", ["No"], (530, 560))], 470, 580, default_val="", page=page, fitz_page=fitz_page
+    )
+    if not seller_owner:
+        m = re.search(r'(?:property\s*seller\s*owner\s*of\s*public\s*record\??).*?(?:(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Yes|(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*No)', txt, re.IGNORECASE)
+        if m:
+            seller_owner = "Yes" if "yes" in m.group(0).lower() else "No"
+    contract["Is property seller owner of public record?"] = seller_owner or ""
     contract["Data Source(s) (Contract)"] = get_val(230, y_owner - 4, 450, y_owner + 10)
 
-    contract["Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?"] = extract_choice_from_row(
-        words, y_fa, [("Yes", ["Yes"], (515, 545)), ("No", ["No"], (545, 575))], 500, 580, default_val=""
-    ) or ""
+    fin_asst = extract_choice_from_row(
+        words, y_fa, [("Yes", ["Yes"], (515, 545)), ("No", ["No"], (545, 580))], 500, 580, default_val="", page=page, fitz_page=fitz_page
+    )
+    if not fin_asst:
+        m = re.search(r'(?:financial\s*assistance.*?borrower\??).*?(?:(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*Yes|(\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*No)', txt, re.IGNORECASE)
+        if m:
+            fin_asst = "Yes" if "yes" in m.group(0).lower() else "No"
+    contract["Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?"] = fin_asst or ""
 
     if_yes_txt = get_val(28, y_if_yes + 8, 580, y_note - 2, strip_labels=False)
     contract["If Yes, report the total dollar amount and describe the items to be paid"] = if_yes_txt
@@ -692,12 +849,12 @@ def extract_page_1_fields(page, full_doc_text=""):
     band_built = ((y_loc + y_built) / 2.0, (y_built + y_growth) / 2.0)
     band_growth = ((y_built + y_growth) / 2.0, y_growth + 8.0)
 
-    neighborhood["Location"] = extract_choice_from_row(words, y_loc, loc_opts, 25, 190, default_val="", y_band=band_loc) or ""
-    neighborhood["Built-Up"] = extract_choice_from_row(words, y_built, built_opts, 25, 190, default_val="", y_band=band_built) or ""
-    neighborhood["Growth"] = extract_choice_from_row(words, y_growth, growth_opts, 25, 190, default_val="", y_band=band_growth) or ""
-    neighborhood["Property Values"] = extract_choice_from_row(words, y_pv, pv_opts, 200, 420, default_val="", y_band=band_loc) or ""
-    neighborhood["Demand/Supply"] = extract_choice_from_row(words, y_ds, ds_opts, 200, 420, default_val="", y_band=band_built) or ""
-    neighborhood["Marketing Time"] = extract_choice_from_row(words, y_mt, mt_opts, 200, 420, default_val="", y_band=band_growth) or ""
+    neighborhood["Location"] = extract_choice_from_row(words, y_loc, loc_opts, 25, 190, default_val="", y_band=band_loc, page=page, fitz_page=fitz_page) or ""
+    neighborhood["Built-Up"] = extract_choice_from_row(words, y_built, built_opts, 25, 190, default_val="", y_band=band_built, page=page, fitz_page=fitz_page) or ""
+    neighborhood["Growth"] = extract_choice_from_row(words, y_growth, growth_opts, 25, 190, default_val="", y_band=band_growth, page=page, fitz_page=fitz_page) or ""
+    neighborhood["Property Values"] = extract_choice_from_row(words, y_pv, pv_opts, 200, 420, default_val="", y_band=band_loc, page=page, fitz_page=fitz_page) or ""
+    neighborhood["Demand/Supply"] = extract_choice_from_row(words, y_ds, ds_opts, 200, 420, default_val="", y_band=band_built, page=page, fitz_page=fitz_page) or ""
+    neighborhood["Marketing Time"] = extract_choice_from_row(words, y_mt, mt_opts, 200, 420, default_val="", y_band=band_growth, page=page, fitz_page=fitz_page) or ""
 
     y_bound = None
     for w in words:
@@ -2206,7 +2363,10 @@ def extract_fields_from_pdf_offline(pdf_path):
 
         if page_indices["form_p1"] is None or page_indices["form_p2"] is None:
             if "WORLDWIDE ERC" in full_doc_text.upper() or "ERC SUMMARY APPRAISAL REPORT" in full_doc_text.upper() or "RELOCATION APPRAISAL" in full_doc_text.upper():
-                from .pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+                try:
+                    from api.pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+                except (ImportError, ModuleNotFoundError):
+                    from .pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline  # type: ignore
                 return extract_fields_from_pdf_ecr_offline(pdf_path)
             return {
                 "error": "Unrecognized Layout",
@@ -2219,7 +2379,8 @@ def extract_fields_from_pdf_offline(pdf_path):
             p3 = pdf.pages[page_indices["form_p3"]] if page_indices["form_p3"] is not None else None
             p_extra = pdf.pages[page_indices["comps_4_6"]] if page_indices["comps_4_6"] is not None else None
 
-            data = extract_page_1_fields(p1, full_doc_text)
+            fitz_p1 = doc[page_indices["form_p1"]] if (doc and page_indices["form_p1"] is not None and page_indices["form_p1"] < len(doc)) else None
+            data = extract_page_1_fields(p1, full_doc_text, fitz_page=fitz_p1)
 
             sales_grid, recon = extract_page_2_sales_grid_and_reconciliation(p2, p_extra)
             if data.get("SUBJECT"):

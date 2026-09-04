@@ -8,10 +8,17 @@ import time
 import textwrap
 from google.api_core import exceptions as google_exceptions
 from PyPDF2 import PdfReader, PdfWriter
+from typing import Any, Dict, List, Optional
 import io
+import os
 from appraisal_review.settings import APIKEY
-
-genai.configure(api_key=APIKEY)
+# Allow APIKEY from settings or environment variable
+ACTIVE_API_KEY = os.environ.get("GEMINI_API_KEY") or os.environ.get("APIKEY") or APIKEY
+if ACTIVE_API_KEY:
+    try:
+        genai.configure(api_key=ACTIVE_API_KEY)
+    except Exception as e:
+        print(f"Warning: Failed to configure genai with API key: {e}")
 
 def _check_for_api_error_message(response_text, prompt_feedback):
     """Checks if the given text or prompt feedback indicates a Gemini API error."""
@@ -749,17 +756,19 @@ custom_checklist_schema = {
 }
 
 
-def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, custom_prompt: str = None, prompt_type: str = "checklist"): # <-- REMOVED 'async'
-    if form_type == "Appraisal Version #1":
-        from api.pdf_extractor_v1 import extract_fields_from_pdf_v1
-        return extract_fields_from_pdf_v1(pdf_path, category=category, custom_prompt=custom_prompt, prompt_type=prompt_type)
-    if str(form_type or "").strip().upper() in ["ECR", "ERC", "WORLDWIDE ERC"]:
-        from api.pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
-        res = extract_fields_from_pdf_ecr_offline(pdf_path)
-        if res.get("status") == "success" or not custom_prompt:
+def extract_fields_from_pdf(pdf_path, form_type: str, category: str | None = None, custom_prompt: str | None = None, prompt_type: str = "checklist"):
+    # If custom_prompt is not provided, perform 100% offline extraction
+    if not custom_prompt:
+        if form_type == "Appraisal Version #1":
+            from api.pdf_extractor_v1 import extract_fields_from_pdf_v1
+            return extract_fields_from_pdf_v1(pdf_path, category=category, custom_prompt=None, prompt_type=prompt_type)
+        if (form_type or "").strip().upper() in ["ECR", "ERC", "WORLDWIDE ERC"]:
+            from api.pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+            return extract_fields_from_pdf_ecr_offline(pdf_path)
+        from api.pdf_extractor_offline import extract_fields_from_pdf_offline
+        res = extract_fields_from_pdf_offline(pdf_path)
+        if res.get("status") == "success":
             return res
-        from api.pdf_extractor_ecr import extract_fields_from_pdf_ecr
-        return extract_fields_from_pdf_ecr(pdf_path, category=category, custom_prompt=custom_prompt, prompt_type=prompt_type)
 
     combined_result = {}
     raw_responses = []
@@ -767,18 +776,41 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
     uploaded_file = None
     cache = None
     try:
+        if not ACTIVE_API_KEY:
+            return {'error': 'Configuration Error', 'message': 'Gemini API key is not configured.'}
+        genai.configure(api_key=ACTIVE_API_KEY)
+
         with open(pdf_path, "rb") as f:
             pdf_bytes = f.read()
 
         print("Uploading PDF to Gemini File API for caching...")
         uploaded_file = genai.upload_file(pdf_path, mime_type="application/pdf")
         
-        print("Creating Gemini Cache...")
-        cache = caching.CachedContent.create(
-            model='models/gemini-3.5-flash',
-            contents=[uploaded_file],
-            ttl=datetime.timedelta(minutes=15)
-        )
+        print("Creating Gemini Cache with gemini-3.5-flash...")
+        try:
+            cache = caching.CachedContent.create(
+                model='models/gemini-3.5-flash',
+                contents=[uploaded_file],
+                ttl=datetime.timedelta(minutes=15)
+            )
+        except Exception as err:
+            print(f"Cache create with gemini-3.5-flash failed ({err}), trying gemini-2.5-flash...")
+            try:
+                cache = caching.CachedContent.create(
+                    model='models/gemini-2.5-flash',
+                    contents=[uploaded_file],
+                    ttl=datetime.timedelta(minutes=15)
+                )
+            except Exception:
+                try:
+                    cache = caching.CachedContent.create(
+                        model='models/gemini-1.5-flash',
+                        contents=[uploaded_file],
+                        ttl=datetime.timedelta(minutes=15)
+                    )
+                except Exception as cache_err:
+                    print(f"Cache creation failed ({cache_err}). Falling back to direct model execution.")
+                    cache = None
 
         if custom_prompt:
             response_schema = None
@@ -787,14 +819,17 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
             elif prompt_type == "general":
                 response_schema = None
 
-            generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
             if response_schema:
-                generation_config["response_schema"] = response_schema
-
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
-            )
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            else:
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
 
             if prompt_type == "direct":
                 final_prompt = custom_prompt
@@ -824,9 +859,22 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
                     The 'comparison_summary' value must be an array of objects. For each item in the checklist, create an object with three keys: 'status' ('Fulfilled' or 'Not Fulfilled'), 'section' (the relevant section from the checklist), and 'comment' (a brief explanation of your finding).
                     Do not include any introductory text, explanations, or markdown formatting like ```json.
                 """)
+
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+                contents_payload = [final_prompt]
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
+                contents_payload = [uploaded_file, final_prompt]
+            raw_text = ""
             try:
-                raw_text = ""
-                response = model.generate_content(contents=[final_prompt], request_options={"timeout": 600.0})
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = response.text
                 if _check_for_api_error_message(raw_text, response.prompt_feedback):
                     return {'error': 'Gemini API Error', 'message': raw_text, 'raw': raw_text}
@@ -863,14 +911,28 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
             elif category_name in field_categories:
                 response_schema = make_flat_schema(field_categories[category_name])
 
-            generation_config = {"temperature": 0.0, "response_mime_type": "application/json"}
             if response_schema:
-                generation_config["response_schema"] = response_schema
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                    response_schema=response_schema,
+                )
+            else:
+                generation_config = genai.GenerationConfig(
+                    temperature=0.0,
+                    response_mime_type="application/json",
+                )
 
-            model = genai.GenerativeModel.from_cached_content(
-                cached_content=cache,
-                generation_config=generation_config
-            )
+            if cache:
+                model = genai.GenerativeModel.from_cached_content(
+                    cached_content=cache,
+                    generation_config=generation_config
+                )
+            else:
+                model = genai.GenerativeModel(
+                    model_name='gemini-3.5-flash',
+                    generation_config=generation_config
+                )
 
             prompt = ""
             if category_name == "SALES_GRID":
@@ -965,7 +1027,8 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
             else:
                 continue
             try:
-                response = model.generate_content(contents=[prompt], request_options={"timeout": 600.0})
+                contents_payload = [prompt] if cache else [uploaded_file, prompt]
+                response = model.generate_content(contents=contents_payload, request_options={"timeout": 600.0})
                 raw_text = ""
                 try:
                     if not response.parts:
@@ -1053,7 +1116,7 @@ def extract_fields_from_pdf(pdf_path, form_type: str, category: str = None, cust
     return {'fields': combined_result, 'raw': "\n\n".join(raw_responses)}
 
 
-def compare_documents(original_path: str, revised_path: str, revision_request: str = None, form_type: str = None) -> dict:
+def compare_documents(original_path: str, revised_path: str, revision_request: str | None = None, form_type: str | None = None) -> dict:
     if form_type == "ECR":
         from api.pdf_extractor_ecr import compare_documents_ecr
         return compare_documents_ecr(original_path, revised_path, revision_request=revision_request) 
@@ -1139,8 +1202,8 @@ def compare_documents(original_path: str, revised_path: str, revision_request: s
             return {'error': 'Gemini API Error', 'message': f"Failed to extract market values: {raw_market_value_text}", 'raw': raw_market_value_text}
 
         try:
-            comparison_json = json.loads(raw_comparison_text.strip().lstrip('```json').rstrip('```').strip()) if raw_comparison_text else {"comparison_summary": []}
-            market_value_json = json.loads(raw_market_value_text.strip().lstrip('```json').rstrip('```').strip()) if raw_market_value_text else {}
+            comparison_json: dict = json.loads(raw_comparison_text.strip().lstrip('```json').rstrip('```').strip()) if raw_comparison_text else {"comparison_summary": []}
+            market_value_json: dict = json.loads(raw_market_value_text.strip().lstrip('```json').rstrip('```').strip()) if raw_market_value_text else {}
         except json.JSONDecodeError as e:
             return {'error': 'JSON Parsing Error', 'message': f"Failed to parse Gemini comparison response: {e}. Raw response: {raw_comparison_text}", 'raw': raw_comparison_text}
         except Exception as e:
@@ -1173,7 +1236,7 @@ def compare_documents(original_path: str, revised_path: str, revision_request: s
         print(f"Error during document comparison: {e}")
         raise
 
-def extract_fields_from_html(html_content: str, fields_to_extract: list[str], custom_prompt: str = None) -> dict:
+def extract_fields_from_html(html_content: str, fields_to_extract: list[str], custom_prompt: str | None = None) -> dict:
     """
     Extracts specified fields from HTML content using a primary (Gemini) and fallback (parsing) strategy.
     (This function was already synchronous and correct)
