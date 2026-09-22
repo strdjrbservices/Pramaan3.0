@@ -3,6 +3,7 @@ import { SubjectInfoCard, GridInfoCard, EditableField } from '../components/Form
 import { Tooltip, IconButton } from '@mui/material';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import ActionButtons from '../components/ActionButtons';
+import PhotosGallerySection from '../components/PhotosGallerySection';
 
 const stripDollar = (val) => {
   if (!val) return '';
@@ -671,6 +672,7 @@ const Form1007 = ({
       {/* <GridInfoCard id="rent-schedule-reconciliation-section" title="Comparable Rent Schedule Reconciliation" fields={rentScheduleReconciliationFields} data={data} cardClass="bg-info" usePre={true} extractionAttempted={extractionAttempted} onDataChange={(field, value) => handleDataChange(field, value)} editingField={editingField} setEditingField={setEditingField} isEditable={true} loading={loading} loadingSection={loadingSection} manualValidations={manualValidations} handleManualValidation={handleManualValidation} revisionHandlers={revisionHandlers} /> */}
 
       <GridInfoCard id="appraiser-section" title="CERTIFICATION" fields={appraiserFields} hideEmptyFields={true} data={data.CERTIFICATION} cardClass="bg-info" extractionAttempted={extractionAttempted} onDataChange={(field, value) => handleDataChange(['CERTIFICATION', ...field], value)} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData} loading={loading} loadingSection={loadingSection} manualValidations={manualValidations} handleManualValidation={handleManualValidation} onRevisionButtonClick={onCertificationRevisionButtonClick} revisionHandlers={revisionHandlers} />
+      <PhotosGallerySection id="photos-exhibits-section" data={data} allData={allData} extractedPhotos={allData?.EXTRACTED_PHOTOS || data?.EXTRACTED_PHOTOS || []} />
     </>
   );
 };

@@ -23,10 +23,18 @@ from .pdf_extractor import (
 )
 from .pdf_extractor_offline import extract_fields_from_pdf_offline
 from .pdf_extractor_ecr_offline import extract_fields_from_pdf_ecr_offline
+from .offline_requirement_checks import (
+    evaluate_state_requirements,
+    evaluate_unpaid_ok,
+    evaluate_client_requirements,
+    evaluate_adu_requirements,
+    evaluate_escalation_check,
+)
 
 import threading
 import shutil
 import time
+from typing import Any, Dict, Optional
 from django.shortcuts import render
 from django.http import FileResponse
 from .automation import run_automation
@@ -38,7 +46,7 @@ from .utils import (
     FULL_FILE_PATH, FULL_FILE_LOGS_PATH, PAUSE_LOCK_FILE, TERMINATION_LOCK_FILE, logger
 )
 
-automation_status = {
+automation_status: Dict[str, Any] = {
     "is_running": False,
     "log_file": None,
     "error": None,
@@ -131,7 +139,7 @@ def execute_fastapp_background(username, password, mode='full_file', download_pr
 def execute_automation_batch(filenames, username, password, mode='revised'):
     global automation_status
     automation_status["is_running"] = True
-    automation_status["batch_total"] = int(len(filenames))
+    automation_status["batch_total"] = len(filenames)
     automation_status["batch_current"] = 0
     automation_status["error"] = None
     logger.start_file_logging(f"automation_{mode}")
@@ -750,6 +758,23 @@ def extract_pdf(request):
                 offline_data = extract_fields_from_pdf_ecr_offline(tmp_path)
                 if offline_data.get("status") == "success":
                     return Response(offline_data)
+            else:
+                prompt_lower = str(custom_prompt).lower()
+                if "state-specific requirements" in prompt_lower or "appraiser’s fee disclosure" in prompt_lower or "appraiser's fee disclosure" in prompt_lower:
+                    res_offline = evaluate_state_requirements(tmp_path)
+                    return Response(res_offline)
+                elif "unpaid ok" in prompt_lower or ("unpaid" in prompt_lower and "lender" in prompt_lower):
+                    res_offline = evaluate_unpaid_ok(tmp_path)
+                    return Response(res_offline)
+                elif "client requirement" in prompt_lower or "client-specific requirement" in prompt_lower or "bpl mortgage" in prompt_lower:
+                    res_offline = evaluate_client_requirements(tmp_path)
+                    return Response(res_offline)
+                elif "accessory dwelling unit" in prompt_lower or "adu requirements" in prompt_lower or "adu" in prompt_lower:
+                    res_offline = evaluate_adu_requirements(tmp_path)
+                    return Response(res_offline)
+                elif "escalation" in prompt_lower:
+                    res_offline = evaluate_escalation_check(tmp_path)
+                    return Response(res_offline)
 
             prompt_type = "checklist" if revision_request else "direct"
             data = extract_fields_from_pdf(
@@ -761,6 +786,9 @@ def extract_pdf(request):
             )
 
             if data.get("error"):
+                offline_fallback = extract_fields_from_pdf_offline(tmp_path)
+                if offline_fallback.get("status") == "success":
+                    return Response(offline_fallback)
                 return Response(
                     {"detail": data.get("message", "Extraction error")},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -893,7 +921,7 @@ def compare_pdf_to_html(request):
             if not html_value_str:
                 html_value_str = "N/A"
 
-            status = (
+            match_status = (
                 "Match"
                 if pdf_value_str.lower() == html_value_str.lower()
                 else "Mismatch"
@@ -904,7 +932,7 @@ def compare_pdf_to_html(request):
                     "field": field,
                     "html_value": html_value_str,
                     "pdf_value": pdf_value_str,
-                    "status": status,
+                    "status": match_status,
                 }
             )
 

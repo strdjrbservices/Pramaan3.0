@@ -669,8 +669,26 @@ export const CondoCoopProjectsTable = ({ id, title, data, onDataChange, editingF
 };
 
 export const SalesComparisonSection = ({ data, salesGridRows, comparableSales, extractionAttempted, handleDataChange, editingField, setEditingField, formType, comparisonData, getComparisonStyle, isEditable, allData }) => {
+    const getCompData = (sale) => {
+        if (!data || typeof data !== 'object') return {};
+        if (data[sale] && typeof data[sale] === 'object') return data[sale];
+        if (data.SALES_GRID && data.SALES_GRID[sale] && typeof data.SALES_GRID[sale] === 'object') return data.SALES_GRID[sale];
+        const noSpace = typeof sale === 'string' ? sale.replace('# ', '#') : sale;
+        const withSpace = typeof sale === 'string' ? sale.replace('#', '# ') : sale;
+        if (data[noSpace] && typeof data[noSpace] === 'object') return data[noSpace];
+        if (data[withSpace] && typeof data[withSpace] === 'object') return data[withSpace];
+        if (data.SALES_GRID && data.SALES_GRID[noSpace] && typeof data.SALES_GRID[noSpace] === 'object') return data.SALES_GRID[noSpace];
+        if (data.SALES_GRID && data.SALES_GRID[withSpace] && typeof data.SALES_GRID[withSpace] === 'object') return data.SALES_GRID[withSpace];
+        return {};
+    };
+
     const getSubjectValue = (row) => {
-        const subjectData = data.Subject || {}; let value = subjectData[row.valueKey] ?? subjectData[row.subjectValueKey] ?? data[row.subjectValueKey] ?? data[row.valueKey] ?? ''; return value;
+        const s1 = (typeof data?.Subject === 'object' && data.Subject) || {};
+        const s2 = (typeof data?.SUBJECT === 'object' && data.SUBJECT) || {};
+        const s3 = (data?.SALES_GRID && typeof data.SALES_GRID.Subject === 'object' && data.SALES_GRID.Subject) || {};
+        const subjectData = { ...s2, ...s1, ...s3 };
+        let value = subjectData[row.valueKey] ?? subjectData[row.subjectValueKey] ?? data?.[row.subjectValueKey] ?? data?.[row.valueKey] ?? '';
+        return value;
     };
 
     return (
@@ -708,8 +726,8 @@ export const SalesComparisonSection = ({ data, salesGridRows, comparableSales, e
                                         )}
                                     </td>
                                     {comparableSales.map((sale, compIndex) => {
-                                        const compData = data[sale] || {};
-                                        const value = compData[row.valueKey] || '';
+                                        const compData = getCompData(sale);
+                                        const value = compData[row.valueKey] ?? compData[row.valueKey?.replace('of Comparable', 'of Comparables')] ?? compData[row.valueKey?.replace('of Comparables', 'of Comparable')] ?? '';
                                         const isMissing = false;
                                         return (
                                             <td key={`${sale}-${row.label}`} style={isMissing ? { border: '2px solid red' } : {}}>
@@ -736,7 +754,7 @@ export const SalesComparisonSection = ({ data, salesGridRows, comparableSales, e
                                         </td>
                                         <td></td>
                                         {comparableSales.map((sale, compIndex) => {
-                                            const compData = data[sale] || {};
+                                            const compData = getCompData(sale);
                                             const rawAdjValue = compData[row.adjustmentKey];
                                             const adjValue = (row.adjustmentKey === 'Baths Adjustment' && (rawAdjValue === undefined || rawAdjValue === ''))
                                                 ? (compData['Above Grade Room Count Adjustment'] || '')

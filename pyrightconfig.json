@@ -1,5 +1,6 @@
 {
   "extraPaths": [
     "appraisal_review"
-  ]
+  ],
+  "reportMissingTypeStubs": "none"
 }

@@ -13,12 +13,14 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 
 
+import os
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-APIKEY = ""
+APIKEY = os.environ.get("APIKEY", os.environ.get("GEMINI_API_KEY", ""))
 
-SECRET_KEY = "django-insecure-zx9!0$38f(!jbn(7=-m-4gc)ixt8lq&-37=mau-qikbw+kkm5+"
+SECRET_KEY = os.environ.get("SECRET_KEY", "django-insecure-zx9!0$38f(!jbn(7=-m-4gc)ixt8lq&-37=mau-qikbw+kkm5+")
 DEBUG = True
 
 ALLOWED_HOSTS = ["*"]

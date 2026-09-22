@@ -1,6 +1,7 @@
 import { SubjectInfoCard, GridInfoCard, MarketConditionsTable } from '../components/FormComponents';
 import { CondoCoopProjectsTable } from '../components/tables';
 import ActionButtons from '../components/ActionButtons';
+import PhotosGallerySection from '../components/PhotosGallerySection';
 
 import SalesComparisonSection from '../components/SalesComparisonSection';
 const Form1073 = ({
@@ -72,6 +73,7 @@ const Form1073 = ({
     <GridInfoCard id="market-conditions-summary" title="Market Conditions Narrative" fields={marketConditionsFields} data={{ ...data, ...(data?.MARKET_CONDITIONS || {}) }} cardClass="bg-warning" usePre={true} extractionAttempted={extractionAttempted} onDataChange={(field, value) => handleDataChange(['MARKET_CONDITIONS', field], value)} editingField={editingField} setEditingField={setEditingField} isEditable={isEditable} loading={loading} loadingSection={loadingSection} manualValidations={manualValidations} handleManualValidation={handleManualValidation} revisionHandlers={revisionHandlers} />
     <MarketConditionsTable id="market-conditions-section" data={data} onDataChange={(field, value) => handleDataChange(field, value)} editingField={editingField} setEditingField={setEditingField} isEditable={isEditable} marketConditionsRows={marketConditionsRows} manualValidations={manualValidations} handleManualValidation={handleManualValidation} revisionHandlers={revisionHandlers} />
     <GridInfoCard id="appraiser-section" title="CERTIFICATION" fields={appraiserFields} data={data.CERTIFICATION} cardClass="bg-info" extractionAttempted={extractionAttempted} onDataChange={(field, value) => handleDataChange(['CERTIFICATION', ...field], value)} editingField={editingField} setEditingField={setEditingField} isEditable={isEditable} allData={allData} loading={loading} loadingSection={loadingSection} manualValidations={manualValidations} handleManualValidation={handleManualValidation} onRevisionButtonClick={onCertificationRevisionButtonClick} revisionHandlers={revisionHandlers} />
+    <PhotosGallerySection id="photos-exhibits-section" data={data} allData={allData} extractedPhotos={allData?.EXTRACTED_PHOTOS || data?.EXTRACTED_PHOTOS || []} />
   </>
 );
 

@@ -25,6 +25,29 @@ const SalesComparisonSection = ({
 }) => {
   extractionAttempted = false;
 
+  const getCompData = (sale) => {
+    if (!data || typeof data !== 'object') return {};
+    if (data[sale] && typeof data[sale] === 'object') return data[sale];
+    if (data.SALES_GRID && data.SALES_GRID[sale] && typeof data.SALES_GRID[sale] === 'object') return data.SALES_GRID[sale];
+    const noSpace = typeof sale === 'string' ? sale.replace('# ', '#') : sale;
+    const withSpace = typeof sale === 'string' ? sale.replace('#', '# ') : sale;
+    if (data[noSpace] && typeof data[noSpace] === 'object') return data[noSpace];
+    if (data[withSpace] && typeof data[withSpace] === 'object') return data[withSpace];
+    if (data.SALES_GRID && data.SALES_GRID[noSpace] && typeof data.SALES_GRID[noSpace] === 'object') return data.SALES_GRID[noSpace];
+    if (data.SALES_GRID && data.SALES_GRID[withSpace] && typeof data.SALES_GRID[withSpace] === 'object') return data.SALES_GRID[withSpace];
+    return {};
+  };
+
+  const getSubjectData = () => {
+    if (!data || typeof data !== 'object') return {};
+    const s1 = (typeof data.Subject === 'object' && data.Subject) || {};
+    const s2 = (typeof data.SUBJECT === 'object' && data.SUBJECT) || {};
+    const s3 = (data.SALES_GRID && typeof data.SALES_GRID.Subject === 'object' && data.SALES_GRID.Subject) || {};
+    return { ...s2, ...s1, ...s3 };
+  };
+
+  const subjectObj = getSubjectData();
+
   return (
     <>
       <Paper id={id} elevation={3} sx={{ mb: 4, mt: 4, borderRadius: 2, overflow: 'hidden' }}>
@@ -68,17 +91,15 @@ const SalesComparisonSection = ({
                         </TableCell>
 
                         <TableCell sx={{ borderRight: '1px solid rgba(224, 224, 224, 1)' }}>
-                          {data.Subject && (
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <EditableField fieldPath={['Subject', totKey]} value={data.Subject[totKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Tot" />
-                              <EditableField fieldPath={['Subject', brKey]} value={data.Subject[brKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Br" />
-                              <EditableField fieldPath={['Subject', baKey]} value={data.Subject[baKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Ba" />
-                            </div>
-                          )}
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            <EditableField fieldPath={['Subject', totKey]} value={subjectObj[totKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Tot" />
+                            <EditableField fieldPath={['Subject', brKey]} value={subjectObj[brKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Br" />
+                            <EditableField fieldPath={['Subject', baKey]} value={subjectObj[baKey] || ''} onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField} isEditable={true} allData={allData || data} revisionHandlers={revisionHandlers} placeholder="Ba" />
+                          </div>
                         </TableCell>
 
                         {comparableSales.map((sale, cidx) => {
-                          const compVal = data[sale] || {};
+                          const compVal = getCompData(sale);
                           return (
                             <TableCell key={cidx} sx={{ borderRight: '1px solid rgba(224, 224, 224, 1)' }}>
                               <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
@@ -97,7 +118,7 @@ const SalesComparisonSection = ({
                   let mostCommonLeasehold = null;
                   let leaseholdInconsistent = false;
                   if (row.label === "Leasehold/Fee Simple") {
-                    const allValues = [data.Subject?.[row.valueKey], ...comparableSales.map(sale => data[sale]?.[row.valueKey])].filter(Boolean);
+                    const allValues = [subjectObj[row.valueKey], ...comparableSales.map(sale => getCompData(sale)[row.valueKey])].filter(Boolean);
                     if (allValues.length > 0) {
                       const valueCounts = allValues.reduce((acc, value) => {
                         acc[value] = (acc[value] || 0) + 1;
@@ -110,14 +131,14 @@ const SalesComparisonSection = ({
                   }
 
                   const subjectValue = row.label === "Verification Source(s)"
-                    ? (comparableSales.map(sale => data[sale]?.[row.valueKey]).find(Boolean) || data.Subject?.[row.valueKey] || '')
-                    : (row.subjectValueKey ? data[row.subjectValueKey] || '' : data.Subject?.[row.valueKey] || '');
+                    ? (comparableSales.map(sale => getCompData(sale)[row.valueKey]).find(Boolean) || subjectObj[row.valueKey] || '')
+                    : (row.subjectValueKey ? (data[row.subjectValueKey] || subjectObj[row.subjectValueKey] || subjectObj[row.valueKey] || '') : (subjectObj[row.valueKey] || data[row.valueKey] || ''));
 
                   const subjectStyle = {};
-                  if (extractionAttempted && ((row.subjectValueKey && !data[row.subjectValueKey]) || (!row.subjectValueKey && (!data.Subject || !data.Subject[row.valueKey])))) {
+                  if (extractionAttempted && !subjectValue) {
                     subjectStyle.border = '2px solid red';
                   }
-                  const subjectLeaseholdValue = data.Subject?.[row.valueKey] || '';
+                  const subjectLeaseholdValue = subjectObj[row.valueKey] || '';
                   if (leaseholdInconsistent && subjectLeaseholdValue && subjectLeaseholdValue !== mostCommonLeasehold) {
                     subjectStyle.backgroundColor = 'red';
                   }
@@ -126,12 +147,12 @@ const SalesComparisonSection = ({
                     <TableRow key={idx} sx={isHighlighted ? { backgroundColor: 'action.selected' } : {}}>
                       <TableCell sx={{ fontWeight: 'medium', borderRight: '1px solid rgba(224, 224, 224, 1)' }}>{row.label}</TableCell>
                       <TableCell sx={{ borderRight: '1px solid rgba(224, 224, 224, 1)', ...subjectStyle }}>
-                        {data.Subject && !row.isAdjustmentOnly && (
+                        {!row.isAdjustmentOnly && (
                           <EditableField
                             fieldPath={row.subjectValueKey ? [row.subjectValueKey] : ['Subject', row.valueKey]}
                             value={subjectValue}
                             onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField}
-                            isMissing={extractionAttempted && (row.subjectValueKey ? !data[row.subjectValueKey] : !data.Subject?.[row.valueKey])}
+                            isMissing={extractionAttempted && !subjectValue}
                             isEditable={true}
                             allData={allData || data}
                             saleName={'Subject'}
@@ -140,11 +161,11 @@ const SalesComparisonSection = ({
                             revisionHandlers={revisionHandlers}
                           />
                         )}
-                        {data.Subject && row.adjustmentKey && (
+                        {row.adjustmentKey && (
                           <EditableField
-                            fieldPath={['Subject', row.adjustmentKey]} value={data.Subject[row.adjustmentKey] || ''}
+                            fieldPath={['Subject', row.adjustmentKey]} value={subjectObj[row.adjustmentKey] || ''}
                             onDataChange={handleDataChange} editingField={editingField} setEditingField={setEditingField}
-                            isMissing={extractionAttempted && (!data.Subject[row.adjustmentKey] || data.Subject[row.adjustmentKey] === '')}
+                            isMissing={extractionAttempted && (!subjectObj[row.adjustmentKey] || subjectObj[row.adjustmentKey] === '')}
                             isEditable={true} isAdjustment={true}
                             allData={allData || data}
                             saleName={'Subject'}
@@ -155,13 +176,14 @@ const SalesComparisonSection = ({
                         )}
                       </TableCell>
                       {comparableSales.map((sale, cidx) => {
-                        const compValue = data[sale]?.[row.valueKey] || '';
-                        const rawAdjValue = data[sale]?.[row.adjustmentKey];
+                        const compObj = getCompData(sale);
+                        const compValue = compObj[row.valueKey] ?? compObj[row.valueKey?.replace('of Comparable', 'of Comparables')] ?? compObj[row.valueKey?.replace('of Comparables', 'of Comparable')] ?? '';
+                        const rawAdjValue = compObj[row.adjustmentKey];
                         const adjValue = (row.adjustmentKey === 'Baths Adjustment' && (rawAdjValue === undefined || rawAdjValue === ''))
-                          ? (data[sale]?.['Above Grade Room Count Adjustment'] || '')
+                          ? (compObj['Above Grade Room Count Adjustment'] || '')
                           : (rawAdjValue || '');
                         const cellStyle = {};
-                        if (extractionAttempted && !row.isAdjustmentOnly && (!data[sale] || (compValue === undefined || compValue === ''))) {
+                        if (extractionAttempted && !row.isAdjustmentOnly && (!compObj || (compValue === undefined || compValue === ''))) {
                           cellStyle.border = '2px solid red';
                         }
 

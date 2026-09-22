@@ -38,4 +38,5 @@ Thumbs.db
 !**/media/uploads/.gitkeep
 **/Downloads/error_screenshots/*
 !**/Downloads/error_screenshots/.gitkeep
+**/scratch/
 

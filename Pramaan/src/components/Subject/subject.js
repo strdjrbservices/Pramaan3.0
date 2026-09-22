@@ -37,7 +37,8 @@ import {
   Code as CodeIcon,
   Apartment as ApartmentIcon,
   FileDownload as FileDownloadIcon,
-  DeleteForever as DeleteForeverIcon
+  DeleteForever as DeleteForeverIcon,
+  PhotoLibrary as PhotoLibraryIcon
 } from '@mui/icons-material';
 import VerifiedUserIcon from '@mui/icons-material/VerifiedUser';
 import VisibilityTwoToneIcon from '@mui/icons-material/VisibilityTwoTone';
@@ -47,6 +48,7 @@ import GetAppIcon from '@mui/icons-material/GetApp';
 import autoTable from 'jspdf-autotable';
 import Sidebar from './layout/Sidebar.js';
 import PromptAnalysis from '../tools/PromptAnalysis.js';
+import PhotosGallerySection from './components/PhotosGallerySection.js';
 
 import {
   ContractComparisonDialog,
@@ -2566,6 +2568,7 @@ function Subject({ defaultFormType }) {
     { id: 'market-conditions-section', title: 'Market Conditions', category: 'MARKET_CONDITIONS', icon: <TrendingUpIcon /> },
     { id: 'condo-coop-section', title: 'Condo/Co-op', category: ['CONDO', 'CONDO_FORECLOSURE'], icon: <BusinessIcon /> },
     { id: 'appraiser-section', title: 'Certification', category: 'CERTIFICATION', icon: <VerifiedUserIcon /> },
+    { id: 'photos-exhibits-section', title: 'Photos & Exhibits', category: 'EXTRACTED_PHOTOS', icon: <PhotoLibraryIcon /> },
     { id: 'raw-output', title: 'Raw Output', icon: <CodeIcon /> },
   ], []);
 
@@ -2934,12 +2937,47 @@ function Subject({ defaultFormType }) {
 
     Object.keys(result.fields || {}).forEach(key => {
       if (key.toUpperCase() === "SUBJECT") {
-        normalizedFields["Subject"] = result.fields[key];
+        normalizedFields["Subject"] = { ...(normalizedFields["Subject"] || {}), ...(result.fields[key] || {}) };
       } else {
         normalizedFields[key] = result.fields[key];
       }
     });
     Object.assign(normalizedFields, result.fields);
+
+    // Unpack SALES_GRID comps and Subject
+    const salesGrid = result.fields?.SALES_GRID || result.clean_data?.SALES_GRID || result.SALES_GRID;
+    if (salesGrid && typeof salesGrid === 'object') {
+      normalizedFields["SALES_GRID"] = salesGrid;
+      Object.keys(salesGrid).forEach(compKey => {
+        if (typeof salesGrid[compKey] === 'object' && salesGrid[compKey] !== null) {
+          if (compKey.toLowerCase().includes('subject')) {
+            normalizedFields["Subject"] = { ...(normalizedFields["Subject"] || {}), ...salesGrid[compKey] };
+            normalizedFields["SUBJECT"] = { ...(normalizedFields["SUBJECT"] || {}), ...salesGrid[compKey] };
+          } else {
+            normalizedFields[compKey] = salesGrid[compKey];
+            const m = compKey.match(/#\s*(\d+)/);
+            if (m) {
+              const num = m[1];
+              normalizedFields[`COMPARABLE SALE #${num}`] = salesGrid[compKey];
+              normalizedFields[`COMPARABLE SALE # ${num}`] = salesGrid[compKey];
+              normalizedFields[`COMPARABLE #${num}`] = salesGrid[compKey];
+              normalizedFields[`COMPARABLE # ${num}`] = salesGrid[compKey];
+              normalizedFields[`Comparable Sale #${num}`] = salesGrid[compKey];
+              normalizedFields[`Comp ${num}`] = salesGrid[compKey];
+            }
+          }
+        }
+      });
+    }
+
+    if (result.extracted_photos && Array.isArray(result.extracted_photos)) {
+      normalizedFields["EXTRACTED_PHOTOS"] = result.extracted_photos;
+      normalizedFields["extracted_photos"] = result.extracted_photos;
+    }
+    if (result.mathematical_verification) {
+      normalizedFields["MATHEMATICAL_VERIFICATION"] = result.mathematical_verification;
+      normalizedFields["mathematical_verification"] = result.mathematical_verification;
+    }
 
     setData(prevData => {
       const updatedData = { ...prevData, ...normalizedFields };
@@ -3879,7 +3917,8 @@ function Subject({ defaultFormType }) {
           { id: 'market-trends-section', title: 'Market Trends Analysis', category: 'MARKET_TRENDS', icon: <TrendingUpIcon /> },
           { id: 'sales-comparison-section', title: 'Sales Comparison Analysis', category: 'SALES_COMPARISON', icon: <MonetizationOnIcon /> },
           { id: 'anticipated-sales-price-section', title: 'Anticipated Sales Price', category: 'ANTICIPATED_SALES_PRICE', icon: <AttachMoneyIcon /> },
-          { id: 'certifications-section', title: 'Appraiser & Certification', category: 'CERTIFICATION', icon: <VerifiedUserIcon /> }
+          { id: 'certifications-section', title: 'Appraiser & Certification', category: 'CERTIFICATION', icon: <VerifiedUserIcon /> },
+          { id: 'photos-exhibits-section', title: 'Photos & Exhibits', category: 'EXTRACTED_PHOTOS', icon: <PhotoLibraryIcon /> }
         ];
       case '1004':
         visibleSectionIds = baseSections.filter(id => !['comparable-rental-data', 'subject-rent-schedule', 'rent-schedule-section', 'prior-sale-history-section', 'rent-schedule-reconciliation-section', 'project-site-section', 'project-info-section', 'project-analysis-section', 'unit-descriptions-section'].includes(id));
@@ -3887,9 +3926,6 @@ function Subject({ defaultFormType }) {
       case 'Appraisal Version #1':
         return [
           { id: 'summary-section', title: 'Summary', category: 'SUMMARY', icon: <DescriptionIcon /> },
-          // { id: 'assignment-information', title: 'Assignment Information', category: 'CONTRACT', icon: <GavelIcon /> },
-          // { id: 'contact-information', title: 'Contact Information', category: 'SUBJECT', icon: <HomeIcon /> },
-          // { id: 'subject-property', title: 'Subject Property', category: 'SUBJECT', icon: <HomeIcon /> },
           { id: 'site', title: 'Site', category: 'SITE', icon: <TerrainIcon /> },
           { id: 'dwelling-exterior', title: 'Dwelling Exterior', category: 'IMPROVEMENTS', icon: <BuildIcon /> },
           { id: 'amenities-quality-condition', title: 'Subject Property Amenities & Overall Quality & Condition', category: 'IMPROVEMENTS', icon: <BuildIcon /> },
@@ -3899,7 +3935,8 @@ function Subject({ defaultFormType }) {
           { id: 'sales-comparison-approach', title: 'Sales Comparison Approach', category: ['INFO_OF_SALES', 'SALES_GRID'], icon: <MonetizationOnIcon /> },
           { id: 'cost-approach', title: 'Cost Approach', category: 'COST_APPROACH', icon: <CalculateIcon /> },
           { id: 'reconciliation', title: 'Reconciliation', category: 'RECONCILIATION', icon: <BalanceIcon /> },
-          { id: 'certifications', title: 'Certifications', category: 'CERTIFICATION', icon: <VerifiedUserIcon /> }
+          { id: 'certifications', title: 'Certifications', category: 'CERTIFICATION', icon: <VerifiedUserIcon /> },
+          { id: 'photos-exhibits-section', title: 'Photos & Exhibits', category: 'EXTRACTED_PHOTOS', icon: <PhotoLibraryIcon /> }
         ];
       case '1025':
         visibleSectionIds = baseSections.filter(id => !['rent-schedule-section', 'project-site-section', 'project-info-section', 'rent-schedule-reconciliation-section', 'project-analysis-section', 'unit-descriptions-section'].includes(id));

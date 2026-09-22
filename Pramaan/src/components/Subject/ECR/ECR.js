@@ -23,6 +23,7 @@ import AutoModeIcon from '@mui/icons-material/AutoMode';
 
 import { GridInfoCard } from '../components/FormComponents';
 import ActionButtons from '../components/ActionButtons';
+import PhotosGallerySection from '../components/PhotosGallerySection';
 import ECRComparisonTable from './ECRComparisonTable';
 import ECRSalesGridTable from './ECRSalesGridTable';
 import ECRMarketTrendsTable from './ECRMarketTrendsTable';
@@ -953,6 +954,8 @@ const ECR = ({
             onRevisionButtonClick={onCertificationRevisionButtonClick}
             revisionHandlers={revisionHandlers}
           />
+
+          <PhotosGallerySection id="photos-exhibits-section" data={file1Data} allData={allData} extractedPhotos={allData?.EXTRACTED_PHOTOS || file1Data?.EXTRACTED_PHOTOS || []} />
         </>
       )}
     </Box>

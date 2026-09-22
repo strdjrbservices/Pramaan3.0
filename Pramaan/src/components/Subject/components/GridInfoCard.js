@@ -65,13 +65,15 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
   };
 
   const renderGridItemValue = (field) => {
+    if (!data) return '';
     if (field === 'Garage Att./Det./Built-in') {
-      const att = data['Garage Att.'] || '';
-      const det = data['Garage Detached'] || '';
-      const builtin = data['Garage Built-in'] || '';
+      const att = data['Garage Att.'] || data?.IMPROVEMENTS?.['Garage Att.'] || '';
+      const det = data['Garage Detached'] || data?.IMPROVEMENTS?.['Garage Detached'] || '';
+      const builtin = data['Garage Built-in'] || data?.IMPROVEMENTS?.['Garage Built-in'] || '';
       return [att, det, builtin].filter(Boolean).join(' / ');
     }
-    return renderValue(data[field]);
+    const val = data[field] ?? data?.IMPROVEMENTS?.[field] ?? data?.COST_APPROACH?.[field] ?? data?.INCOME_APPROACH?.[field] ?? data?.PUD_INFO?.[field] ?? data?.SITE?.[field] ?? data?.NEIGHBORHOOD?.[field] ?? data?.SUBJECT?.[field];
+    return renderValue(val);
   };
 
   const renderGridItem = (field) => {
@@ -161,14 +163,19 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
   };
 
   const renderCostField = (label, fieldPath) => {
+    const costData = data?.COST_APPROACH || data || {};
+    const val = costData?.[fieldPath] ?? costData?.[label] ?? data?.COST_APPROACH?.[fieldPath] ?? data?.COST_APPROACH?.[label] ?? data?.[fieldPath] ?? data?.[label] ?? '';
+    const valStr = renderValue(val);
+    const targetPath = ['COST_APPROACH', fieldPath];
+
     return (
       <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px', marginBottom: '6px' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
           <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', minWidth: '120px', whiteSpace: 'nowrap' }}>{label}</span>
           <div style={{ flexGrow: 1 }}>
             <EditableField
-              fieldPath={[fieldPath]}
-              value={data ? renderValue(data[fieldPath]) : ''}
+              fieldPath={targetPath}
+              value={valStr}
               onDataChange={onDataChange}
               editingField={editingField}
               setEditingField={setEditingField}
@@ -208,6 +215,66 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
     return ['IMPROVEMENTS', actualKey];
   };
 
+  const checkOptionMatches = (valStr, opt) => {
+    if (!valStr || !opt) return false;
+    const v = String(valStr).trim().toLowerCase();
+    const optLower = opt.trim().toLowerCase();
+    const o = optLower.replace(/\./g, '');
+
+    // Handle Units special case: "One" should NOT match "One with Accessory Unit"
+    if (opt === 'One') {
+      return v === 'one' || (/\bone\b/i.test(v) && !v.includes('accessory'));
+    }
+    if (opt === 'One with Accessory Unit') {
+      return v.includes('accessory');
+    }
+
+    // Exact string match
+    if (v === optLower || v === o) return true;
+
+    // Split by commas, slashes, or semicolons
+    const tokens = v.split(/[,;/]+/).map(t => t.trim()).filter(Boolean);
+    for (const token of tokens) {
+      const t = token.toLowerCase();
+      const tClean = t.replace(/\./g, '').trim();
+
+      if (t === optLower || tClean === o) return true;
+      if (o === 'det' && (tClean === 'detached' || tClean === 'det')) return true;
+      if (o === 'att' && (tClean === 'attached' || tClean === 'att')) return true;
+      if ((o.includes('s-det') || o.includes('end unit')) && (tClean.includes('semi') || tClean.includes('s-det') || tClean.includes('end unit'))) return true;
+      if (o === 'existing' && tClean === 'existing') return true;
+      if (o === 'proposed' && tClean === 'proposed') return true;
+      if (o.includes('under') && tClean.includes('under')) return true;
+      if (o === 'concrete slab' && (tClean.includes('slab') || tClean === 'concrete slab')) return true;
+      if (o === 'crawl space' && (tClean.includes('crawl') || tClean === 'crawl space')) return true;
+      if (o === 'full basement' && (tClean.includes('full') || tClean === 'full basement')) return true;
+      if (o === 'partial basement' && (tClean.includes('partial') || tClean === 'partial basement')) return true;
+      if (o.includes('outside') && (tClean.includes('outside') || tClean.includes('entry'))) return true;
+      if (o.includes('sump') && (tClean.includes('sump') || tClean.includes('pump'))) return true;
+      if (o === 'none' && tClean === 'none') return true;
+      if (o.includes('refrigerator') && tClean.includes('refrigerator')) return true;
+      if (o.includes('range') && (tClean.includes('range') || tClean.includes('oven'))) return true;
+      if (o.includes('dishwasher') && tClean.includes('dishwasher')) return true;
+      if (o.includes('disposal') && tClean.includes('disposal')) return true;
+      if (o.includes('microwave') && tClean.includes('microwave')) return true;
+      if (o.includes('washer') && (tClean.includes('washer') || tClean.includes('dryer'))) return true;
+      if (o.includes('fwa') && tClean === 'fwa') return true;
+      if (o.includes('hwbb') && tClean === 'hwbb') return true;
+      if (o.includes('radiant') && tClean === 'radiant') return true;
+      if (o.includes('central') && (tClean.includes('central') || tClean.includes('central air'))) return true;
+      if (o.includes('woodstove') && tClean.includes('woodstove')) return true;
+      if (o.includes('fireplace') && tClean.includes('fireplace')) return true;
+      if (o.includes('fence') && tClean.includes('fence')) return true;
+      if (o.includes('patio') && (tClean.includes('patio') || tClean.includes('deck'))) return true;
+      if (o.includes('porch') && tClean.includes('porch')) return true;
+      if (o.includes('pool') && tClean.includes('pool')) return true;
+      if (o === 'driveway' && (tClean.includes('driveway') || tClean === 'driveway')) return true;
+      if (o === 'garage' && (tClean.includes('garage') || tClean === 'garage')) return true;
+      if (o === 'carport' && (tClean.includes('carport') || tClean === 'carport')) return true;
+    }
+    return false;
+  };
+
   const renderImpField = (label, keys, options = []) => {
     const { value: rawVal, actualKey } = getImpValue(keys);
     const valStr = renderValue(rawVal);
@@ -221,14 +288,15 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
         {options.length > 0 && (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 8px', marginBottom: '3px' }}>
             {options.map(opt => {
-              const isChecked = valStr.toLowerCase().includes(opt.toLowerCase());
+              const isChecked = checkOptionMatches(valStr, opt);
               const handleToggle = () => {
-                let newVal;
+                let items = valStr ? valStr.split(',').map(s => s.trim()).filter(Boolean) : [];
                 if (isChecked) {
-                  newVal = valStr.split(',').map(s => s.trim()).filter(s => s.toLowerCase() !== opt.toLowerCase()).join(', ');
+                  items = items.filter(item => !checkOptionMatches(item, opt));
                 } else {
-                  newVal = valStr ? `${valStr}, ${opt}` : opt;
+                  items.push(opt);
                 }
+                const newVal = items.join(', ');
                 onDataChange(targetPath, newVal);
               };
               return (
@@ -406,6 +474,7 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
   }
 
   if (id === 'cost-approach-section') {
+    const costData = data?.COST_APPROACH || data || {};
     return (
       <Paper id={id} elevation={1} sx={{ mb: 2, borderRadius: 2, overflow: 'hidden', borderTop: '3px solid', borderTopColor: borderColor }}>
         <Box
@@ -419,7 +488,7 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
             justifyContent: 'space-between',
             alignItems: 'center',
           }}>
-          <Typography variant="h6" component="h5" sx={{ fontSize: '1.05rem', fontWeight: 'bold' }}>{title}</Typography>
+          <Typography variant="h6" component="h5" sx={{ fontSize: '1.05rem', fontWeight: 'bold' }}>{title || "Cost Approach"}</Typography>
           {onRevisionButtonClick && (
             <Tooltip title="Revision Language">
               <IconButton onClick={onRevisionButtonClick} size="small" sx={{ color: 'text.secondary', ml: 'auto' }}><LibraryBooksIcon /></IconButton>
@@ -437,8 +506,8 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
             </div>
             <div style={{ minHeight: '40px', marginBottom: '12px' }}>
               <EditableField
-                fieldPath={["Provide adequate information for the lender/client to replicate the below cost figures and calculations."]}
-                value={data ? renderValue(data["Provide adequate information for the lender/client to replicate the below cost figures and calculations."]) : ''}
+                fieldPath={["COST_APPROACH", "Provide adequate information for the lender/client to replicate the below cost figures and calculations."]}
+                value={renderValue(costData["Provide adequate information for the lender/client to replicate the below cost figures and calculations."] || '')}
                 onDataChange={onDataChange}
                 editingField={editingField}
                 setEditingField={setEditingField}
@@ -459,8 +528,8 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
             </div>
             <div style={{ minHeight: '40px' }}>
               <EditableField
-                fieldPath={["Support for the opinion of site value (summary of comparable land sales or other methods for estimating site value)"]}
-                value={data ? renderValue(data["Support for the opinion of site value (summary of comparable land sales or other methods for estimating site value)"]) : ''}
+                fieldPath={["COST_APPROACH", "Support for the opinion of site value (summary of comparable land sales or other methods for estimating site value)"]}
+                value={renderValue(costData["Support for the opinion of site value (summary of comparable land sales or other methods for estimating site value)"] || '')}
                 onDataChange={onDataChange}
                 editingField={editingField}
                 setEditingField={setEditingField}
@@ -486,14 +555,13 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
               {renderCostField("ESTIMATED COST NEW TYPE", "Estimated")}
               {renderCostField("Source of Cost Data", "Source of cost data")}
 
-
               <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px', marginBottom: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
                   <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', minWidth: '80px', whiteSpace: 'nowrap' }}>Quality Rating</span>
                   <div style={{ flexGrow: 1 }}>
                     <EditableField
-                      fieldPath={["Quality rating from cost service "]}
-                      value={data ? renderValue(data["Quality rating from cost service "]) : ''}
+                      fieldPath={["COST_APPROACH", "Quality rating from cost service "]}
+                      value={renderValue(costData["Quality rating from cost service "] || costData["Quality rating from cost service"] || costData["Quality Rating"] || '')}
                       onDataChange={onDataChange}
                       editingField={editingField}
                       setEditingField={setEditingField}
@@ -509,8 +577,8 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
                   <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', whiteSpace: 'nowrap' }}>Effective Date</span>
                   <div style={{ width: '80px' }}>
                     <EditableField
-                      fieldPath={["Effective date of cost data "]}
-                      value={data ? renderValue(data["Effective date of cost data "]) : ''}
+                      fieldPath={["COST_APPROACH", "Effective date of cost data "]}
+                      value={renderValue(costData["Effective date of cost data "] || costData["Effective date of cost data"] || costData["Effective Date"] || '')}
                       onDataChange={onDataChange}
                       editingField={editingField}
                       setEditingField={setEditingField}
@@ -532,8 +600,8 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
                 </div>
                 <div style={{ minHeight: '60px', marginTop: '4px' }}>
                   <EditableField
-                    fieldPath={["Comments on Cost Approach (gross living area calculations, depreciation, etc.)"]}
-                    value={data ? renderValue(data["Comments on Cost Approach (gross living area calculations, depreciation, etc.)"]) : ''}
+                    fieldPath={["COST_APPROACH", "Comments on Cost Approach (gross living area calculations, depreciation, etc.)"]}
+                    value={renderValue(costData["Comments on Cost Approach (gross living area calculations, depreciation, etc.)"] || '')}
                     onDataChange={onDataChange}
                     editingField={editingField}
                     setEditingField={setEditingField}
@@ -565,7 +633,6 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
               {renderCostField("Garage/Carport", "Garage/Carport ")}
               {renderCostField("Total Estimate Cost-New", "Total Estimate of Cost-New = $ ...................")}
 
-
               <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px', marginBottom: '6px' }}>
                 <div style={{ fontWeight: 'bold', color: '#6c757d', fontSize: '0.65rem', marginBottom: '2px' }}>
                   Less: Physical | Functional | External
@@ -582,6 +649,117 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
             </div>
           </div>
 
+        </div>
+      </Paper>
+    );
+  }
+
+  if (id === 'income-approach-section') {
+    const incData = data?.INCOME_APPROACH || data || {};
+    const rentVal = renderValue(incData["Estimated Monthly Market Rent $"] || incData["Estimated Monthly Market Rent"] || data?.["Estimated Monthly Market Rent $"] || '');
+    const grmVal = renderValue(incData["X Gross Rent Multiplier  = $"] || incData["X Gross Rent Multiplier = $"] || incData["Gross Rent Multiplier"] || incData["X GROSS RENT MULTIPLIER = $"] || data?.["X Gross Rent Multiplier  = $"] || '');
+    const indIncVal = renderValue(incData["Indicated Value by Income Approach"] || incData["Indicated Value by Income Approach $"] || incData["INDICATED VALUE BY INCOME APPROACH"] || data?.["Indicated Value by Income Approach"] || '');
+    const sumVal = renderValue(incData["Summary of Income Approach (including support for market rent and GRM) "] || incData["Summary of Income Approach (including support for market rent and GRM)"] || incData["SUMMARY OF INCOME APPROACH"] || data?.["Summary of Income Approach (including support for market rent and GRM) "] || '');
+
+    return (
+      <Paper id={id} elevation={1} sx={{ mb: 2, borderRadius: 2, overflow: 'hidden', borderTop: '3px solid', borderTopColor: borderColor }}>
+        <Box
+          sx={{
+            p: 1.5,
+            bgcolor: 'grey.50',
+            color: 'text.primary',
+            borderBottom: '1px solid',
+            borderColor: 'grey.200',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+          <Typography variant="h6" component="h5" sx={{ fontSize: '1.05rem', fontWeight: 'bold' }}>{title || "Income Approach"}</Typography>
+          {onRevisionButtonClick && (
+            <Tooltip title="Revision Language">
+              <IconButton onClick={onRevisionButtonClick} size="small" sx={{ color: 'text.secondary', ml: 'auto' }}><LibraryBooksIcon /></IconButton>
+            </Tooltip>
+          )}
+        </Box>
+        {loading && loadingSection === id && (
+          <Box sx={{ width: '100%' }}><LinearProgress /></Box>
+        )}
+        <div className="card-body p-3" style={{ fontSize: '0.8rem', backgroundColor: '#fff' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px', marginBottom: '16px', borderBottom: '1px solid #dee2e6', paddingBottom: '12px' }}>
+            <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px' }}>
+              <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', display: 'block', marginBottom: '2px' }}>Estimated Monthly Market Rent $</span>
+              <EditableField
+                fieldPath={["INCOME_APPROACH", "Estimated Monthly Market Rent $"]}
+                value={rentVal}
+                onDataChange={onDataChange}
+                editingField={editingField}
+                setEditingField={setEditingField}
+                isEditable={true}
+                allData={allData}
+                manualValidations={manualValidations}
+                handleManualValidation={handleManualValidation}
+                revisionHandlers={revisionHandlers}
+                inputClassName="form-control form-control-sm field-value"
+                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: 0, fontSize: '0.8rem', height: 'auto' }}
+              />
+            </div>
+            <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px' }}>
+              <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', display: 'block', marginBottom: '2px' }}>X Gross Rent Multiplier = $</span>
+              <EditableField
+                fieldPath={["INCOME_APPROACH", "X Gross Rent Multiplier  = $"]}
+                value={grmVal}
+                onDataChange={onDataChange}
+                editingField={editingField}
+                setEditingField={setEditingField}
+                isEditable={true}
+                allData={allData}
+                manualValidations={manualValidations}
+                handleManualValidation={handleManualValidation}
+                revisionHandlers={revisionHandlers}
+                inputClassName="form-control form-control-sm field-value"
+                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: 0, fontSize: '0.8rem', height: 'auto' }}
+              />
+            </div>
+            <div style={{ borderBottom: '1px solid #dee2e6', paddingBottom: '3px', backgroundColor: '#e9ecef', padding: '6px', borderRadius: '4px' }}>
+              <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.7rem', display: 'block', marginBottom: '2px' }}>Indicated Value by Income Approach</span>
+              <EditableField
+                fieldPath={["INCOME_APPROACH", "Indicated Value by Income Approach"]}
+                value={indIncVal}
+                onDataChange={onDataChange}
+                editingField={editingField}
+                setEditingField={setEditingField}
+                isEditable={true}
+                allData={allData}
+                manualValidations={manualValidations}
+                handleManualValidation={handleManualValidation}
+                revisionHandlers={revisionHandlers}
+                inputClassName="form-control form-control-sm field-value"
+                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: 0, fontSize: '0.8rem', height: 'auto' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.75rem', marginBottom: '4px' }}>
+              Summary of Income Approach (including support for market rent and GRM)
+            </div>
+            <EditableField
+              fieldPath={["INCOME_APPROACH", "Summary of Income Approach (including support for market rent and GRM) "]}
+              value={sumVal}
+              onDataChange={onDataChange}
+              editingField={editingField}
+              setEditingField={setEditingField}
+              usePre={true}
+              isMissing={false}
+              isEditable={true}
+              allData={allData}
+              manualValidations={manualValidations}
+              handleManualValidation={handleManualValidation}
+              revisionHandlers={revisionHandlers}
+              inputClassName="form-control form-control-sm field-value-pre"
+              inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: 0, fontSize: '0.8rem', height: 'auto', minHeight: '60px', resize: 'vertical' }}
+            />
+          </div>
         </div>
       </Paper>
     );

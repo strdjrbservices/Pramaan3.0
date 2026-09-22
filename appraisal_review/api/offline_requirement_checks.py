@@ -534,3 +534,65 @@ def evaluate_escalation_check(pdf_path: str, extracted_data: Optional[Dict[str, 
         "summary": "Escalation check completed. All 23 appraisal escalation rules analyzed.",
         "details": details
     }
+
+
+def evaluate_photo_requirements(pdf_path: str, extracted_data: Optional[Dict[str, Any]] = None) -> dict:
+    """
+    Evaluates presence of mandatory photos according to GSE (Fannie Mae / Freddie Mac) appraisal standards:
+    - Subject Front
+    - Subject Rear
+    - Subject Street Scene
+    - Kitchen
+    - Main Living Area
+    - Bathrooms
+    - Bedrooms
+    - Comparable Sales 1-3 Front Views
+    - Safety Detectors / Water Heater Double-Strapped (if required)
+    """
+    data = _normalize_extracted_data(pdf_path, extracted_data)
+    photos = data.get("EXTRACTED_PHOTOS", [])
+
+    captions_text = " ".join(p.get("caption", "") for p in photos).upper()
+
+    checks = [
+        ("Subject Front Photo", ["SUBJECT FRONT", "FRONT VIEW"], "Required front view of subject property."),
+        ("Subject Rear Photo", ["SUBJECT REAR", "REAR VIEW"], "Required rear view of subject property."),
+        ("Subject Street Scene", ["SUBJECT STREET", "STREET SCENE", "STREET VIEW"], "Required street scene view of subject neighborhood."),
+        ("Kitchen Photo", ["KITCHEN"], "Required interior kitchen photograph."),
+        ("Main Living Area Photo", ["LIVING", "LIVING ROOM", "FAMILY ROOM"], "Required interior living area photograph."),
+        ("Bathroom Photo(s)", ["BATH", "BATHROOM", "FULL BATH", "PRIMARY FULL BATH"], "Required interior bathroom photograph(s)."),
+        ("Comparable 1 Photo", ["COMPARABLE 1", "COMPARABLE #1", "COMP 1"], "Required street view photograph of Comparable Sale #1."),
+        ("Comparable 2 Photo", ["COMPARABLE 2", "COMPARABLE #2", "COMP 2"], "Required street view photograph of Comparable Sale #2."),
+        ("Comparable 3 Photo", ["COMPARABLE 3", "COMPARABLE #3", "COMP 3"], "Required street view photograph of Comparable Sale #3."),
+        ("Building Sketch / Floor Plan", ["BUILDING SKETCH", "SKETCH", "INSTAPLAN", "FLOOR PLAN"], "Required exterior building dimensions / floor plan sketch.")
+    ]
+
+    details = []
+    fulfilled_count = 0
+
+    for req_name, keywords, desc in checks:
+        found = any(kw in captions_text for kw in keywords)
+        if found:
+            fulfilled_count += 1
+            details.append({
+                "requirement": req_name,
+                "status": "Fulfilled",
+                "value_or_comment": f"{req_name} identified in report photograph addenda."
+            })
+        else:
+            details.append({
+                "requirement": req_name,
+                "status": "Missing",
+                "value_or_comment": f"{desc} Caption not detected in photograph addenda."
+            })
+
+    total_count = len(checks)
+    summary = f"Photo checklist evaluation completed: {fulfilled_count} of {total_count} required photos verified."
+
+    return {
+        "summary": summary,
+        "fulfilled_count": fulfilled_count,
+        "total_count": total_count,
+        "details": details
+    }
+

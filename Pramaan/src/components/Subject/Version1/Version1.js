@@ -2,6 +2,7 @@ import React from 'react';
 import { GridInfoCard, EditableField } from '../components/FormComponents';
 import ActionButtons from '../components/ActionButtons';
 import SalesComparisonSection from '../components/SalesComparisonSection';
+import PhotosGallerySection from '../components/PhotosGallerySection';
 import { Tooltip, IconButton, Paper, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Checkbox } from '@mui/material';
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 
@@ -1835,6 +1836,8 @@ const Version1 = ({
         revisionHandlers={revisionHandlers}
         showBlankValidation={extractionAttempted}
       />
+
+      <PhotosGallerySection id="photos-exhibits-section" data={data} allData={allData} extractedPhotos={allData?.EXTRACTED_PHOTOS || data?.EXTRACTED_PHOTOS || []} />
     </>
   );
 };
