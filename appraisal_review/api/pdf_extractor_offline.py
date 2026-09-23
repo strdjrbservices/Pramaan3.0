@@ -34,7 +34,8 @@ CONTRACT_FIELDS = [
     'I did did not analyze the contract for sale for the subject purchase transaction. Explain the results of the analysis of the contract for sale or why the analysis was not performed.',
     'Contract Price $', 'Date of Contract', 'Is property seller owner of public record?', 'Data Source(s)',
     'Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?',
-    'If Yes, report the total dollar amount and describe the items to be paid'
+    'If Yes, report the total dollar amount and describe the items to be paid',
+    'If Yes, report the total dollar amount and describe the items to be paid.'
 ]
 
 NEIGHBORHOOD_FIELDS = [
@@ -289,6 +290,7 @@ SalesGridFIELDS2 = [
     "Data Source(s)",
     "Verification Source(s)",
     "Sales or Financing Concessions",
+    "Sales or Financing Concessions Adjustment",
     "Date of Sale/Time",
     "Date of Sale/Time Adjustment",
     "Location",
@@ -951,15 +953,16 @@ def is_box_checked_in_page(words, bx0, by0, bx1, by1, kw_label=None, page=None, 
             return True
 
         for cw in words:
-            if by0 - 5.0 <= cw['top'] <= by1 + 5.0 and (anchor_w['x0'] - 20.0 <= cw['x0'] <= anchor_w['x0'] - 0.5):
+            if by0 - 5.0 <= cw['top'] <= by1 + 5.0 and (anchor_w['x0'] - 22.0 <= cw['x0'] <= anchor_w['x0'] - 0.5):
                 if is_glyph_check(cw['text']):
                     return True
 
-        sq_x0 = max(0, anchor_w['x0'] - 14.0)
-        sq_x1 = max(0.1, anchor_w['x0'] - 0.5)
+        sq_x0 = max(0, anchor_w['x0'] - 16.0)
+        sq_x1 = max(0.1, anchor_w['x0'] - 1.0)
         sq_y0 = anchor_w['top'] - 2.5
         sq_y1 = anchor_w['bottom'] + 2.5
 
+        phys_r = None
         if fitz_page:
             phys_r = find_physical_checkbox_rect(fitz_page, anchor_w['x0'] - 7.0, (anchor_w['top'] + anchor_w['bottom']) / 2.0, search_radius=15.0)
             if phys_r:
@@ -973,14 +976,16 @@ def is_box_checked_in_page(words, bx0, by0, bx1, by1, kw_label=None, page=None, 
             return True
         if check_box_vector_graphics(page, fitz_page, sq_x0, sq_y0, sq_x1, sq_y1):
             return True
-        if fitz_page and check_box_pixel_density(fitz_page, sq_x0, sq_y0, sq_x1, sq_y1, min_dark_ratio=0.10, min_dark_pixels=5):
+        if phys_r and fitz_page and check_box_pixel_density(fitz_page, sq_x0, sq_y0, sq_x1, sq_y1, min_dark_ratio=0.12, min_dark_pixels=6):
             return True
+        return False
 
     sq_x0 = bx0 - 1.5
     sq_x1 = min(bx1, bx0 + 10.0)
     sq_y0 = by0 - 1.5
     sq_y1 = by1 + 1.5
 
+    phys_r = None
     if fitz_page:
         phys_r = find_physical_checkbox_rect(fitz_page, (bx0 + sq_x1) / 2.0, (by0 + by1) / 2.0, search_radius=12.0)
         if phys_r:
@@ -996,7 +1001,7 @@ def is_box_checked_in_page(words, bx0, by0, bx1, by1, kw_label=None, page=None, 
         return True
     if check_box_vector_graphics(page, fitz_page, sq_x0, sq_y0, sq_x1, sq_y1):
         return True
-    if fitz_page and check_box_pixel_density(fitz_page, sq_x0, sq_y0, sq_x1, sq_y1, min_dark_ratio=0.10, min_dark_pixels=5):
+    if phys_r and fitz_page and check_box_pixel_density(fitz_page, sq_x0, sq_y0, sq_x1, sq_y1, min_dark_ratio=0.14, min_dark_pixels=6):
         return True
 
     return False
@@ -1142,9 +1147,54 @@ def extract_choice_from_row(words, y_target, options, x_min=0, x_max=600, defaul
 
 
 
+def extract_ansi_sentence_from_doc(doc=None, full_doc_text=""):
+    """
+    Scans the entire PDF document for the whole word 'ANSI' (case-insensitive)
+    and extracts the complete sentence(s) in which it appears.
+    """
+    candidate_texts = []
+    if doc is not None:
+        for page in doc:
+            t = page.get_text("text") or ""
+            if re.search(r'\bANSI\b', t, re.IGNORECASE):
+                candidate_texts.append(t)
+    if not candidate_texts and full_doc_text:
+        if re.search(r'\bANSI\b', full_doc_text, re.IGNORECASE):
+            candidate_texts.append(full_doc_text)
+
+    found_sentences = []
+    for txt in candidate_texts:
+        norm_txt = re.sub(r'[\r\n]+', ' ', txt)
+        sentences = re.split(r'(?<=[.?!])\s+', norm_txt)
+        for s in sentences:
+            s_clean = s.strip()
+            if re.search(r'\bANSI\b', s_clean, re.IGNORECASE):
+                s_clean = re.sub(r'^(?:ADDITIONAL\s+COMMENTS|COMMENTS|NOTE|APPRAISAL\s+COMMENTS|SCOPE\s+OF\s+WORK)\s*[:\-]\s*', '', s_clean, flags=re.IGNORECASE).strip()
+                if s_clean and s_clean not in found_sentences:
+                    found_sentences.append(s_clean)
+
+    if found_sentences:
+        return " ".join(found_sentences)
+
+    if full_doc_text and re.search(r'\bANSI\b', full_doc_text, re.IGNORECASE):
+        norm_full = re.sub(r'[\r\n]+', ' ', full_doc_text)
+        m = re.search(r'([^.?!;\n]*\bANSI\b[^.?!;\n]*[.?!]?)', norm_full, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+
+    return ""
+
+
 def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     """Extracts clean fields for SUBJECT, CONTRACT, NEIGHBORHOOD, and SITE dynamically."""
-    words = page.extract_words()
+    if fitz_page is not None:
+        try:
+            fitz_words = fitz_page.get_text("words")
+            words = [{'x0': w[0], 'top': w[1], 'x1': w[2], 'bottom': w[3], 'text': w[4]} for w in fitz_words]
+        except Exception:
+            words = page.extract_words()
+    else:
+        words = page.extract_words()
     txt = page.extract_text() or ""
 
     def get_val(x0, top, x1, bottom, strip_labels=True):
@@ -1306,16 +1356,23 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     prior_m = re.search(r'(performed no services[^\.\n]+[\.\n]|within the (?:three|3) year period[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
     subject["Prior service comment"] = prior_m.group(1).strip() if prior_m else ""
 
-    ansi_m = re.search(r'(ANSI[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
-    subject["ANSI"] = ansi_m.group(1).strip() if ansi_m else ""
+    ansi_val = extract_ansi_sentence_from_doc(doc=None, full_doc_text=full_doc_text)
+    subject["ANSI"] = ansi_val
+    subject["ANSI Standards"] = ansi_val
+    subject["ANSI Comment"] = ansi_val
 
     # CONTRACT
     y_contract = find_label_y(words, "Contract", max_x=120) or 210.0
     y_did = find_label_y(words, "analyze the contract", max_x=120) or find_label_y(words, "did not analyze", max_x=120) or (y_contract + 8.0)
     y_sp = find_label_y(words, "Contract Price", max_x=120) or find_label_y(words, "Contract Price $", max_x=120) or 245.0
     y_fa = find_label_y(words, "financial assistance", max_x=120) or (y_sp + 12.0)
-    y_if_yes = find_label_y(words, "describe the items", max_x=120) or find_label_y(words, "report the total", max_x=120) or (y_fa + 12.0)
-    y_note = find_label_y(words, "Characteristics", max_x=120) or find_label_y(words, "Neighborhood", max_x=120) or (y_if_yes + 25.0)
+    
+    # Dynamic discovery of If Yes row and bottom boundary (y_note / NEIGHBORHOOD)
+    w_if_yes = [w for w in words if ('report' in w['text'].lower() or 'dollar' in w['text'].lower() or 'items' in w['text'].lower() or 'paid' in w['text'].lower()) and y_fa - 2.0 <= w['top'] <= y_fa + 35.0 and w['x0'] < 320]
+    y_if_yes = w_if_yes[0]['top'] if w_if_yes else (y_fa + 11.5)
+    
+    w_note = [w for w in words if ('race' in w['text'].lower() or 'racial' in w['text'].lower() or 'neighborhood' in w['text'].lower() or 'characteristics' in w['text'].lower() or 'boundaries' in w['text'].lower()) and y_if_yes + 4.0 <= w['top'] <= y_if_yes + 60.0 and w['x0'] < 250]
+    y_note = w_note[0]['top'] if w_note else (y_if_yes + 28.0)
 
     # 1. Did / Did Not Analyze Choice & Narrative
     did_opts = [
@@ -1439,14 +1496,43 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     contract["Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?"] = fin_asst or ""
 
     # 7. Concessions / If Yes Details
-    ifyes_raw = get_val(220, y_if_yes - 4.0, 585, y_note - 2.5, strip_labels=False)
-    ifyes_txt = re.sub(r'^(?:If\s+Yes,?\s*report\s+the\s+total\s+dollar\s+amount\s+and\s+describe\s+the\s+items\s+to\s+be\s+paid[\.\:]*\s*)', '', ifyes_raw, flags=re.IGNORECASE).strip()
+    ifyes_words = [
+        w for w in words
+        if (y_if_yes - 3.0 <= w['top'] <= y_note - 2.0)
+        and 26.5 <= w['x0'] <= 588.0
+        and w['text'] not in ["TCARTNOC", "DOOHROBHGIEN", "C", "O", "N", "T", "R", "A", "C", "T"]
+    ]
+    ifyes_words.sort(key=lambda w: (round(w['top'] / 3.5) * 3.5, w['x0']))
+    
+    prompt_tokens = {"if", "yes", "yes,", "report", "the", "total", "dollar", "amount", "and", "describe", "items", "to", "be", "paid", "paid.", "paid:"}
+    note_tokens = {"note:", "note", "race", "and", "the", "racial", "composition", "of", "neighborhood", "are", "not", "appraisal", "factors.", "factors"}
+    
+    filtered_words = []
+    for w in ifyes_words:
+        w_lower = w['text'].lower().strip()
+        if abs(w['top'] - y_if_yes) <= 5.0 and w['x0'] < 245.0 and w_lower in prompt_tokens:
+            continue
+        if abs(w['top'] - y_note) <= 6.0 and w_lower in note_tokens:
+            continue
+        filtered_words.append(w['text'])
+        
+    ifyes_txt = " ".join(filtered_words).strip()
+    ifyes_txt = re.sub(r'^(?:If\s+Yes,?\s*report\s+the\s+total\s+dollar\s+amount\s+and\s+describe\s+the\s+items\s+to\s+be\s+paid[\.\:]*\s*)', '', ifyes_txt, flags=re.IGNORECASE).strip()
     ifyes_txt = re.sub(r'(?:Note\s*:\s*Race\s+and\s+the\s+racial\s+composition.*|are\s+not\s+appraisal\s+factors.*)', '', ifyes_txt, flags=re.IGNORECASE).strip()
+    
     if not ifyes_txt:
-        m_conc = re.search(r'(?:\$0;;\s*No\s*financial\s*assistance[^\.\n]+|\$0;;\s*There\s*are\s*no\s*known[^\.\n]+|seller\s*concessions[^\.\n]+)', txt, re.IGNORECASE)
+        m_conc = re.search(r'(?:report\s+the\s+total\s+dollar\s+amount\s+and\s+describe\s+the\s+items\s+to\s+be\s+paid\.?\s*)(.*?)(?=\n\s*(?:Note\s*:|NEIGHBORHOOD|Neighborhood|Characteristics|Location|\Z))', txt, re.DOTALL | re.IGNORECASE)
         if m_conc:
-            ifyes_txt = m_conc.group(0).strip()
+            ifyes_txt = " ".join(m_conc.group(1).split()).strip()
+            ifyes_txt = re.sub(r'(?:Note\s*:\s*Race\s+and\s+the\s+racial\s+composition.*|are\s+not\s+appraisal\s+factors.*)', '', ifyes_txt, flags=re.IGNORECASE).strip()
+
+    if not ifyes_txt:
+        m_conc2 = re.search(r'(?:\$[\d,]+(?:\.\d+)?\s*(?:;;|;|\/|\-|\:)[^\.\n]+|(?:\$0|0)\s*(?:;;|;|\/|\-|\:)\s*(?:No\s*financial|There\s*are\s*no|None)[^\.\n]+|seller\s*concessions[^\.\n]+)', txt, re.IGNORECASE)
+        if m_conc2:
+            ifyes_txt = m_conc2.group(0).strip()
+
     contract["If Yes, report the total dollar amount and describe the items to be paid"] = ifyes_txt
+    contract["If Yes, report the total dollar amount and describe the items to be paid."] = ifyes_txt
 
     n_top = find_label_y(words, "Characteristics", max_x=120) or 300.0
 
@@ -1633,74 +1719,98 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     raw_desc = get_val(28, y_desc - 4, 580, y_mc - 2, strip_labels=True)
     neighborhood["Neighborhood Description"] = re.sub(r'^(?:Neighborhood\s+)?Description\s*', '', raw_desc, flags=re.IGNORECASE).strip()
 
-    raw_mc = get_val(28, y_mc - 4, 580, y_dim - 2, strip_labels=True)
+    # 1. Improvements Section Top Discovery (General Description header row)
+    gen_words = [w for w in words if ('general' in w['text'].lower() or 'foundation' in w['text'].lower()) and 550 <= w['top'] <= 660 and w['x0'] < 160]
+    y_imp_top = gen_words[0]['top'] if gen_words else None
+    if not y_imp_top:
+        for w in words:
+            if w['x0'] < 100 and w['text'].lower() == 'units' and 550 <= w['top'] <= 660:
+                y_imp_top = w['top'] - 12.0
+                break
+    y_imp_top = y_imp_top or 612.0
+
+    # 2. Site Section Start Discovery (Dimensions label row)
+    dim_words = [w for w in words if 'dimensions' in w['text'].lower() and 400 <= w['top'] <= 520 and w['x0'] < 120]
+    y_site_start = dim_words[0]['top'] if dim_words else None
+    if not y_site_start:
+        for w in words:
+            if w['x0'] < 100 and (w['text'].lower() == 'site' or 'etis' in w['text'].lower()) and (w['top'] < y_imp_top - 40) and (w['top'] > (y_mc or 250)):
+                y_site_start = w['top']
+                break
+    y_site_start = y_site_start or (y_mc + 25.0 if y_mc else 452.0)
+
+    raw_mc = get_val(28, y_mc - 4, 580, y_site_start - 2, strip_labels=True)
     neighborhood["Market Conditions:"] = re.sub(r'^(?:Market\s+Conditions[^\)]*\)\s*|Market\s+Conditions\s*)', '', raw_mc, flags=re.IGNORECASE).strip()
 
-    def find_site_y(labels, x_min=20, x_max=585, y_min=450, y_max=650):
-        if isinstance(labels, str): labels = [labels]
-        for lbl in labels:
-            lbl_l = lbl.lower()
+    def find_site_y(keywords, x_min=20, x_max=585, y_min=None, y_max=None):
+        if y_min is None: y_min = y_site_start - 6.0
+        if y_max is None: y_max = y_imp_top + 2.0
+        if isinstance(keywords, str): keywords = [keywords]
+        for kw in keywords:
+            tokens = [t.lower().strip() for t in re.split(r'[\s/]+', kw) if t.strip()]
+            if not tokens: continue
+            first_tok = tokens[0]
             for w in words:
                 if x_min <= w['x0'] <= x_max and y_min <= w['top'] <= y_max:
-                    if lbl_l in w['text'].lower():
+                    if first_tok in w['text'].lower():
                         return w['top']
         return None
 
-    def find_site_box(labels, x_min=20, x_max=585, y_min=450, y_max=650):
-        if isinstance(labels, str): labels = [labels]
-        for lbl in labels:
-            lbl_l = lbl.lower()
+    def find_site_box(keywords, x_min=20, x_max=585, y_min=None, y_max=None):
+        if y_min is None: y_min = y_site_start - 6.0
+        if y_max is None: y_max = y_imp_top + 2.0
+        if isinstance(keywords, str): keywords = [keywords]
+        for kw in keywords:
+            tokens = [t.lower().strip() for t in re.split(r'[\s/]+', kw) if t.strip()]
+            if not tokens: continue
+            first_tok = tokens[0]
             for w in words:
                 if x_min <= w['x0'] <= x_max and y_min <= w['top'] <= y_max:
-                    if lbl_l in w['text'].lower():
+                    if first_tok in w['text'].lower():
                         return w
         return None
 
-    y_dim = find_site_y(["Dimensions", "Area", "Shape", "View"], 20, 200, 455, 505) or y_dim or 480.0
-    y_zclass = find_site_y(["Specific Zoning Classification", "Zoning Classification", "Classification"], 20, 160, y_dim - 2, 525) or (y_dim + 12.0)
-    y_zcomp = find_site_y(["Zoning Compliance", "Legal Nonconforming", "Compliance"], 20, 160, y_zclass - 2, 540) or (y_zclass + 12.0)
-    y_hbu = find_site_y(["highest and best use", "present use", "best use"], 20, 250, y_zcomp - 2, 555) or (y_zcomp + 12.0)
-    y_util_hdr = find_site_y(["Utilities", "Off-site Improvements", "Public", "Other (describe)"], 20, 200, y_hbu - 2, 570) or (y_hbu + 12.0)
-    y_util_r1 = find_site_y(["Electricity", "Water", "Street"], 20, 100, y_util_hdr - 2, 585) or (y_util_hdr + 11.5)
-    y_util_r2 = find_site_y(["Gas", "Sanitary Sewer", "Sewer", "Alley"], 20, 100, y_util_r1 - 2, 600) or (y_util_r1 + 11.5)
-    y_fema = find_site_y(["FEMA Special Flood Hazard Area", "Special Flood Hazard Area", "Flood Zone", "FEMA Map #"], 20, 220, y_util_r2 - 2, 615) or (y_util_r2 + 12.0)
-    y_typ = find_site_y(["typical for the market area", "typical for the market", "market area?"], 20, 220, y_fema - 2, 630) or (y_fema + 12.0)
-    y_adv = find_site_y(["adverse site conditions", "external factors", "environmental conditions"], 20, 220, y_typ - 2, 645) or (y_typ + 12.0)
-    y_imp = find_site_y(["General Description", "IMPROVEMENTS"], 20, 220, y_adv - 2, 675) or (y_adv + 35.0)
+    y_dim = find_site_y(["Dimensions"], 20, 100, y_site_start - 8.0, y_site_start + 15.0) or y_site_start
+    y_zclass = find_site_y(["Specific", "Zoning"], 20, 160, y_dim + 4.0, y_dim + 20.0) or (y_dim + 11.5)
+    y_zcomp = find_site_y(["Compliance"], 20, 120, y_zclass + 4.0, y_zclass + 20.0) or (y_zclass + 11.5)
+    y_hbu = find_site_y(["highest"], 20, 120, y_zcomp + 4.0, y_zcomp + 20.0) or (y_zcomp + 11.5)
+    y_util_hdr = find_site_y(["Utilities"], 20, 100, y_hbu + 4.0, y_hbu + 28.0) or (y_hbu + 22.8)
+    y_util_r1 = find_site_y(["Electricity"], 20, 100, y_util_hdr + 4.0, y_util_hdr + 20.0) or (y_util_hdr + 11.4)
+    y_util_r2 = find_site_y(["Gas"], 20, 100, y_util_r1 + 4.0, y_util_r1 + 20.0) or (y_util_r1 + 11.4)
+    y_fema = find_site_y(["FEMA"], 20, 100, y_util_r2 + 4.0, y_util_r2 + 20.0) or (y_util_r2 + 11.4)
+    y_typ = find_site_y(["utilities"], 20, 100, y_fema + 4.0, y_fema + 20.0) or (y_fema + 11.4)
+    y_adv = find_site_y(["adverse"], 20, 100, y_typ + 4.0, y_typ + 20.0) or (y_typ + 11.4)
 
     # Dynamic Column Boundaries for Row 1 (Dimensions, Area, Shape, View)
     box_dim = find_site_box(["Dimensions"], 20, 100, y_dim - 6, y_dim + 8)
-    box_area = find_site_box(["Area"], 180, 260, y_dim - 6, y_dim + 8)
-    box_shape = find_site_box(["Shape"], 300, 380, y_dim - 6, y_dim + 8)
-    box_view = find_site_box(["View"], 420, 500, y_dim - 6, y_dim + 8)
+    box_area = find_site_box(["Area"], 220, 270, y_dim - 6, y_dim + 8)
+    box_shape = find_site_box(["Shape"], 340, 390, y_dim - 6, y_dim + 8)
+    box_view = find_site_box(["View"], 460, 510, y_dim - 6, y_dim + 8)
 
-    x_dim_start = (box_dim['x1'] + 2) if box_dim else 70
-    x_area_start = (box_area['x1'] + 2) if box_area else 225
-    x_shape_start = (box_shape['x1'] + 2) if box_shape else 355
-    x_view_start = (box_view['x1'] + 2) if box_view else 475
+    site["Dimensions"] = get_val(box_dim['x1'] + 2 if box_dim else 68, y_dim - 4, box_area['x0'] - 2 if box_area else 240, y_dim + 10)
+    site["Area"] = get_val(box_area['x1'] + 2 if box_area else 260, y_dim - 4, box_shape['x0'] - 2 if box_shape else 355, y_dim + 10)
+    site["Shape"] = get_val(box_shape['x1'] + 2 if box_shape else 380, y_dim - 4, box_view['x0'] - 2 if box_view else 475, y_dim + 10)
+    site["View"] = get_val(box_view['x1'] + 2 if box_view else 495, y_dim - 4, 585, y_dim + 10)
 
-    x_dim_end = (box_area['x0'] - 2) if box_area else 215
-    x_area_end = (box_shape['x0'] - 2) if box_shape else 335
-    x_shape_end = (box_view['x0'] - 2) if box_view else 460
-    x_view_end = 588
-
-    site["Dimensions"] = get_val(x_dim_start, y_dim - 3, x_dim_end, y_dim + 9, strip_labels=True)
-    site["Area"] = get_val(x_area_start, y_dim - 3, x_area_end, y_dim + 9, strip_labels=True)
-    site["Shape"] = get_val(x_shape_start, y_dim - 3, x_shape_end, y_dim + 9, strip_labels=True)
-    site["View"] = get_val(x_view_start, y_dim - 3, x_view_end, y_dim + 9, strip_labels=True)
+    if not site["Dimensions"] or not site["Area"] or not site["Shape"] or not site["View"]:
+        m_r1 = re.search(r'Dimensions\s+([^\n\r]+?)\s+Area\s+([^\n\r]+?)\s+Shape\s+([^\n\r]+?)\s+View\s+([^\n\r]+)', txt, re.IGNORECASE)
+        if m_r1:
+            if not site["Dimensions"]: site["Dimensions"] = m_r1.group(1).strip()
+            if not site["Area"]: site["Area"] = m_r1.group(2).strip()
+            if not site["Shape"]: site["Shape"] = m_r1.group(3).strip()
+            if not site["View"]: site["View"] = m_r1.group(4).strip()
 
     # Specific Zoning Classification & Description
-    box_zclass_lbl = next((w for w in words if abs(w['top'] - y_zclass) < 6 and 'classification' in w['text'].lower()), None)
-    box_zdesc_lbl = next((w for w in words if abs(w['top'] - y_zclass) < 6 and 'description' in w['text'].lower() and w['x0'] > 180), None)
+    box_zclass = find_site_box(["Classification"], 60, 130, y_zclass - 6, y_zclass + 8)
+    box_zdesc = find_site_box(["Zoning", "Description"], 240, 310, y_zclass - 6, y_zclass + 8)
 
-    x_zclass_start = (box_zclass_lbl['x1'] + 2) if box_zclass_lbl else 115
-    x_zclass_end = (box_zdesc_lbl['x0'] - 2) if box_zdesc_lbl else 240
-    raw_zclass = get_val(x_zclass_start, y_zclass - 3, x_zclass_end, y_zclass + 9, strip_labels=False)
-    raw_zclass = re.sub(r'^(?:Specific\s+Zoning\s+Classification\s*[:\-]*\s*|Classification\s*[:\-]*\s*)', '', raw_zclass, flags=re.IGNORECASE).strip()
+    raw_zclass = get_val(box_zclass['x1'] + 2 if box_zclass else 115, y_zclass - 4, box_zdesc['x0'] - 4 if box_zdesc else 240, y_zclass + 10)
+    raw_zclass = re.sub(r'^(?:Specific\s+Zoning\s+Classification\s*[:\-]*\s*|Classification\s*[:\-]*\s*|Zoning\s*[:\-]*\s*)', '', raw_zclass, flags=re.IGNORECASE).strip()
+    raw_zclass = re.sub(r'(?:Zoning.*|Description.*)$', '', raw_zclass, flags=re.IGNORECASE).strip()
     site["Specific Zoning Classification"] = raw_zclass
 
-    x_zdesc_start = (box_zdesc_lbl['x1'] + 2) if box_zdesc_lbl else 280
-    raw_zdesc = get_val(x_zdesc_start, y_zclass - 3, 588, y_zclass + 9, strip_labels=False)
+    box_zdesc_lbl = find_site_box(["Description"], 260, 310, y_zclass - 6, y_zclass + 8)
+    raw_zdesc = get_val(box_zdesc_lbl['x1'] + 2 if box_zdesc_lbl else 300, y_zclass - 4, 585, y_zclass + 10)
     raw_zdesc = re.sub(r'^(?:Zoning\s+Description\s*[:\-]*\s*|Description\s*[:\-]*\s*)', '', raw_zdesc, flags=re.IGNORECASE).strip()
     site["Zoning Description"] = raw_zdesc
 
@@ -1712,12 +1822,12 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
 
     # Zoning Compliance
     zcomp_opts = [
-        ("No Zoning", ["No Zoning"], (250, 310)),
-        ("Legal Nonconforming (Grandfathered Use)", ["Nonconforming", "Grandfathered"], (120, 180)),
-        ("Illegal (describe)", ["Illegal"], (325, 380)),
-        ("Legal", ["Legal"], (75, 120))
+        ("Legal", ["Legal"], (85, 125)),
+        ("Legal Nonconforming (Grandfathered Use)", ["Nonconforming", "Grandfathered"], (125, 265)),
+        ("No Zoning", ["No Zoning"], (265, 315)),
+        ("Illegal (describe)", ["Illegal"], (315, 380))
     ]
-    zcomp_choice = extract_choice_from_row(words, y_zcomp, zcomp_opts, 50, 420, default_val="", page=page, fitz_page=fitz_page)
+    zcomp_choice = extract_choice_from_row(words, y_zcomp, zcomp_opts, 80, 390, default_val="Legal", page=page, fitz_page=fitz_page)
     if not zcomp_choice:
         if re.search(r'(?:\[[Xx8]\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8])\s*No\s*Zoning', txt, re.IGNORECASE):
             zcomp_choice = "No Zoning"
@@ -1732,77 +1842,70 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     site["Zoning Compliance"] = zcomp_choice
 
     # Highest & Best Use
-    hbu_opts = [("Yes", ["Yes"], (385, 428)), ("No", ["No"], (428, 470))]
-    hbu_choice = extract_choice_from_row(words, y_hbu, hbu_opts, 350, 490, default_val="Yes", page=page, fitz_page=fitz_page) or "Yes"
-    hbu_desc = get_val(465, y_hbu - 2, 588, y_hbu + 8, strip_labels=True)
+    hbu_opts = [("Yes", ["Yes"], (405, 445)), ("No", ["No"], (445, 485))]
+    hbu_choice = extract_choice_from_row(words, y_hbu, hbu_opts, 400, 490, default_val="Yes", page=page, fitz_page=fitz_page) or "Yes"
+    hbu_desc = get_val(485, y_hbu - 2, 588, y_hbu + 8, strip_labels=True)
     if hbu_choice == "No" and hbu_desc:
         site["Is the highest and best use of subject property as improved (or as proposed per plans and specifications) the present use?"] = f"No: {hbu_desc}".strip(": ")
     else:
         site["Is the highest and best use of subject property as improved (or as proposed per plans and specifications) the present use?"] = hbu_choice
 
     # Utilities Row 1 (Electricity, Water, Street)
-    elec_choice = extract_choice_from_row(words, y_util_r1, [("Other", ["Other"], (95, 135)), ("Public", ["Public"], (60, 95))], 50, 140, default_val="Public", page=page, fitz_page=fitz_page)
-    elec_txt = get_val(125, y_util_r1 - 2, 210, y_util_r1 + 8, strip_labels=False)
-    if elec_choice == "Other" or (elec_txt and elec_txt.lower() not in ["", "none"]):
-        site["Electricity"] = f"Other: {elec_txt}".strip(": ") if elec_txt else "Other"
+    elec_choice = extract_choice_from_row(words, y_util_r1, [("Public", ["Public"], (60, 95)), ("Other", ["Other"], (95, 135))], 50, 140, default_val="Public", page=page, fitz_page=fitz_page)
+    elec_txt = get_val(135, y_util_r1 - 2, 205, y_util_r1 + 8, strip_labels=False)
+    elec_txt = re.sub(r'^(?:Electricity\s*[:\-]*\s*|Public\s*|Other\s*)', '', elec_txt, flags=re.IGNORECASE).strip()
+    if elec_choice == "Other" and elec_txt and elec_txt.lower() not in ["", "none"]:
+        site["Electricity"] = f"Other: {elec_txt}".strip(": ")
         site["Electricity comment"] = elec_txt
     else:
         site["Electricity"] = "Public"
         site["Electricity comment"] = ""
 
-    water_choice = extract_choice_from_row(words, y_util_r1, [("Other", ["Other"], (295, 335)), ("Public", ["Public"], (255, 295))], 240, 340, default_val="Public", page=page, fitz_page=fitz_page)
-    water_txt = get_val(330, y_util_r1 - 2, 425, y_util_r1 + 8, strip_labels=False)
-    if water_choice == "Other" or (water_txt and water_txt.lower() not in ["", "none"]):
-        site["Water"] = f"Other: {water_txt}".strip(": ") if water_txt else "Other"
+    water_choice = extract_choice_from_row(words, y_util_r1, [("Public", ["Public"], (240, 275)), ("Other", ["Other"], (275, 335))], 235, 340, default_val="Public", page=page, fitz_page=fitz_page)
+    water_txt = get_val(330, y_util_r1 - 2, 385, y_util_r1 + 8, strip_labels=False)
+    water_txt = re.sub(r'^(?:Water\s*[:\-]*\s*|Public\s*|Other\s*)', '', water_txt, flags=re.IGNORECASE).strip()
+    if water_choice == "Other" and water_txt and water_txt.lower() not in ["", "none"]:
+        site["Water"] = f"Other: {water_txt}".strip(": ")
         site["Water comment"] = water_txt
     else:
         site["Water"] = "Public"
         site["Water comment"] = ""
 
-    street_mat = get_val(435, y_util_r1 - 2, 515, y_util_r1 + 8, strip_labels=False)
-    street_mat = re.sub(r'^(?:Street\s*[:\-]*\s*)', '', street_mat, flags=re.IGNORECASE).strip()
-    street_choice = extract_choice_from_row(words, y_util_r1, [("Private", ["Private"], (550, 588)), ("Public", ["Public"], (515, 550))], 505, 590, default_val="Public", page=page, fitz_page=fitz_page)
-    site["Street"] = f"{street_choice}: {street_mat}".strip(": ") if street_mat else (street_choice or "Public")
+    box_st_lbl = find_site_box(["Street"], 375, 410, y_util_r1 - 4, y_util_r1 + 6)
+    street_mat = get_val(box_st_lbl['x1'] + 2 if box_st_lbl else 405, y_util_r1 - 4, 510, y_util_r1 + 8)
+    street_mat = re.sub(r'^(?:Street\s*[:\-]*\s*|Off-site\s*Improvements\s*[-–]*\s*Type\s*)', '', street_mat, flags=re.IGNORECASE).strip()
+    street_choice = extract_choice_from_row(words, y_util_r1, [("Public", ["Public"], (510, 545)), ("Private", ["Private"], (545, 585))], 505, 590, default_val="Public", page=page, fitz_page=fitz_page) or "Public"
+    site["Street"] = f"{street_choice}: {street_mat}".strip(": ") if street_mat else street_choice
     site["Street comment"] = street_mat
 
     # Utilities Row 2 (Gas, Sanitary Sewer, Alley)
-    gas_choice = extract_choice_from_row(words, y_util_r2, [("Other", ["Other"], (95, 135)), ("Public", ["Public"], (60, 95))], 50, 140, default_val="", page=page, fitz_page=fitz_page)
-    gas_txt = get_val(125, y_util_r2 - 2, 210, y_util_r2 + 8, strip_labels=False)
-    gas_txt = re.sub(r'^(?:Gas\s*[:\-]*\s*)', '', gas_txt, flags=re.IGNORECASE).strip()
-    if not gas_choice:
-        if re.search(r'Gas\s*\[\s*\]\s*Public\s*\[[Xx8]\]', txt, re.IGNORECASE) or (gas_txt and gas_txt.lower() in ["none", "lp", "propane", "bottle", "tank"]):
-            gas_choice = "Other"
-        else:
-            gas_choice = "Public"
-    if gas_choice == "Other":
-        site["Gas"] = f"Other: {gas_txt}".strip(": ") if gas_txt else "Other"
+    gas_choice = extract_choice_from_row(words, y_util_r2, [("Public", ["Public"], (60, 95)), ("Other", ["Other"], (95, 135))], 50, 140, default_val="Public", page=page, fitz_page=fitz_page)
+    gas_txt = get_val(135, y_util_r2 - 2, 205, y_util_r2 + 8, strip_labels=False)
+    gas_txt = re.sub(r'^(?:Gas\s*[:\-]*\s*|Public\s*|Other\s*)', '', gas_txt, flags=re.IGNORECASE).strip()
+    if gas_choice == "Other" and gas_txt and gas_txt.lower() not in ["", "none"]:
+        site["Gas"] = f"Other: {gas_txt}".strip(": ")
         site["Gas comment"] = gas_txt
     else:
         site["Gas"] = "Public"
         site["Gas comment"] = ""
 
     box_alley_lbl = next((w for w in words if abs(w['top'] - y_util_r2) < 6 and 'alley' in w['text'].lower()), None)
-    x_sewer_end = (box_alley_lbl['x0'] - 2) if box_alley_lbl else 425
-    sewer_choice = extract_choice_from_row(words, y_util_r2, [("Other", ["Other"], (295, 335)), ("Public", ["Public"], (255, 295))], 240, 340, default_val="", page=page, fitz_page=fitz_page)
+    x_sewer_end = (box_alley_lbl['x0'] - 2) if box_alley_lbl else 385
+    sewer_choice = extract_choice_from_row(words, y_util_r2, [("Public", ["Public"], (240, 275)), ("Other", ["Other"], (275, 335))], 235, 340, default_val="Public", page=page, fitz_page=fitz_page)
     sewer_txt = get_val(330, y_util_r2 - 2, x_sewer_end, y_util_r2 + 8, strip_labels=False)
-    sewer_txt = re.sub(r'^(?:Sanitary\s*Sewer\s*[:\-]*\s*|Sewer\s*[:\-]*\s*)', '', sewer_txt, flags=re.IGNORECASE)
+    sewer_txt = re.sub(r'^(?:Sanitary\s*Sewer\s*[:\-]*\s*|Sewer\s*[:\-]*\s*|Public\s*|Other\s*)', '', sewer_txt, flags=re.IGNORECASE)
     sewer_txt = re.sub(r'\bAlley\b.*$', '', sewer_txt, flags=re.IGNORECASE).strip()
-    if not sewer_choice:
-        if re.search(r'Sanitary\s*Sewer\s*\[\s*\]\s*Public\s*\[[Xx8]\]', txt, re.IGNORECASE) or (sewer_txt and "septic" in sewer_txt.lower()):
-            sewer_choice = "Other"
-        else:
-            sewer_choice = "Public"
-    if sewer_choice == "Other":
-        site["Sanitary Sewer"] = f"Other: {sewer_txt}".strip(": ") if sewer_txt else "Other"
+    if sewer_choice == "Other" and sewer_txt and sewer_txt.lower() not in ["", "none"]:
+        site["Sanitary Sewer"] = f"Other: {sewer_txt}".strip(": ")
         site["Sanitary Sewer comment"] = sewer_txt
     else:
         site["Sanitary Sewer"] = "Public"
-        site["Sanitary Sewer comment"] = sewer_txt
+        site["Sanitary Sewer comment"] = ""
 
-    x_alley_start = (box_alley_lbl['x1'] + 2) if box_alley_lbl else 435
-    alley_mat = get_val(x_alley_start, y_util_r2 - 2, 515, y_util_r2 + 8, strip_labels=False)
+    box_al_lbl = find_site_box(["Alley"], 375, 410, y_util_r2 - 4, y_util_r2 + 6)
+    alley_mat = get_val(box_al_lbl['x1'] + 2 if box_al_lbl else 405, y_util_r2 - 4, 510, y_util_r2 + 8)
     alley_mat = re.sub(r'^(?:Alley\s*[:\-]*\s*)', '', alley_mat, flags=re.IGNORECASE).strip()
-    alley_choice = extract_choice_from_row(words, y_util_r2, [("Private", ["Private"], (550, 588)), ("Public", ["Public"], (515, 550))], 505, 590, default_val="", page=page, fitz_page=fitz_page)
+    alley_choice = extract_choice_from_row(words, y_util_r2, [("Public", ["Public"], (510, 545)), ("Private", ["Private"], (545, 585))], 505, 590, default_val="", page=page, fitz_page=fitz_page)
     if alley_choice == "Public":
         site["Alley"] = f"Public: {alley_mat}".strip(": ") if alley_mat else "Public"
     elif alley_choice == "Private":
@@ -1814,54 +1917,48 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     site["Alley comment"] = alley_mat
 
     # FEMA Flood Info
-    fema_choice = extract_choice_from_row(words, y_fema, [("Yes", ["Yes"], (185, 230)), ("No", ["No"], (230, 275))], 180, 280, default_val="No", page=page, fitz_page=fitz_page)
-    site["FEMA Special Flood Hazard Area"] = fema_choice or "No"
+    fema_choice = extract_choice_from_row(words, y_fema, [("Yes", ["Yes"], (130, 165)), ("No", ["No"], (165, 200))], 120, 205, default_val="No", page=page, fitz_page=fitz_page) or "No"
+    site["FEMA Special Flood Hazard Area"] = fema_choice
 
-    box_fema_zone = next((w for w in words if abs(w['top'] - y_fema) < 6 and 'zone' in w['text'].lower() and w['x0'] > 200), None)
-    box_fema_map = next((w for w in words if abs(w['top'] - y_fema) < 6 and ('map' in w['text'].lower() or '#' in w['text']) and w['x0'] > 300 and w['x0'] < 480), None)
-    box_fema_date = next((w for w in words if abs(w['top'] - y_fema) < 6 and 'date' in w['text'].lower() and w['x0'] > 440), None)
+    box_fema_zn = find_site_box(["Zone"], 220, 260, y_fema - 6, y_fema + 8)
+    box_fema_map_lbl = find_site_box(["Map"], 315, 345, y_fema - 6, y_fema + 8)
+    raw_zone = get_val(box_fema_zn['x1'] + 2 if box_fema_zn else 255, y_fema - 4, box_fema_map_lbl['x0'] - 20 if box_fema_map_lbl else 300, y_fema + 8)
+    site["FEMA Flood Zone"] = re.sub(r'^(?:FEMA\s+Flood\s+Zone\s*[:\-]*\s*|Zone\s*[:\-]*\s*|FEMA\s*|Map\s*)', '', raw_zone, flags=re.IGNORECASE).strip()
 
-    x_zone_start = (box_fema_zone['x1'] + 2) if box_fema_zone else 295
-    x_zone_end = (box_fema_map['x0'] - 2) if box_fema_map else 355
-    raw_zone = get_val(x_zone_start, y_fema - 2, x_zone_end, y_fema + 8, strip_labels=False)
-    site["FEMA Flood Zone"] = re.sub(r'^(?:FEMA\s+Flood\s+Zone\s*[:\-]*\s*|Zone\s*[:\-]*\s*)', '', raw_zone, flags=re.IGNORECASE).strip()
+    box_fema_hash = find_site_box(["#"], 340, 360, y_fema - 6, y_fema + 8)
+    box_fema_dt_lbl = find_site_box(["Map"], 480, 510, y_fema - 6, y_fema + 8)
+    raw_map = get_val(box_fema_hash['x1'] + 2 if box_fema_hash else 355, y_fema - 4, box_fema_dt_lbl['x0'] - 20 if box_fema_dt_lbl else 470, y_fema + 8)
+    site["FEMA Map #"] = re.sub(r'^(?:FEMA\s+Map\s*#?\s*[:\-]*\s*|Map\s*#?\s*[:\-]*\s*|#\s*|FEMA\s*)', '', raw_map, flags=re.IGNORECASE).strip()
 
-    x_map_start = (box_fema_map['x1'] + 2) if box_fema_map else 390
-    x_map_end = (box_fema_date['x0'] - 2) if box_fema_date else 505
-    raw_map = get_val(x_map_start, y_fema - 2, x_map_end, y_fema + 8, strip_labels=False)
-    site["FEMA Map #"] = re.sub(r'^(?:FEMA\s+Map\s*#?\s*[:\-]*\s*|Map\s*#?\s*[:\-]*\s*|#\s*)', '', raw_map, flags=re.IGNORECASE).strip()
-
-    x_date_start = (box_fema_date['x1'] + 2) if box_fema_date else 515
-    raw_date = get_val(x_date_start, y_fema - 2, 588, y_fema + 8, strip_labels=False)
+    box_fema_dt = find_site_box(["Date"], 490, 530, y_fema - 6, y_fema + 8)
+    raw_date = get_val(box_fema_dt['x1'] + 2 if box_fema_dt else 520, y_fema - 4, 585, y_fema + 8)
     site["FEMA Map Date"] = re.sub(r'^(?:FEMA\s+Map\s+Date\s*[:\-]*\s*|Date\s*[:\-]*\s*)', '', raw_date, flags=re.IGNORECASE).strip()
 
     # Fallback FEMA regex from text
     m_fema = re.search(r'FEMA\s+Flood\s+Zone\s+([A-Z0-9]+)\s+FEMA\s+Map\s+#\s+([A-Z0-9]+)\s+FEMA\s+Map\s+Date\s+([\d/]+)', txt, re.IGNORECASE)
     if m_fema:
-        if not site["FEMA Flood Zone"] or site["FEMA Flood Zone"].lower() in ["map", "zone"]:
+        if not site["FEMA Flood Zone"] or site["FEMA Flood Zone"].lower() in ["map", "zone", ""]:
             site["FEMA Flood Zone"] = m_fema.group(1).strip()
-        if not site["FEMA Map #"] or site["FEMA Map #"].lower() in ["map", "date", "#"]:
+        if not site["FEMA Map #"] or site["FEMA Map #"].lower() in ["map", "date", "#", ""]:
             site["FEMA Map #"] = m_fema.group(2).strip()
         if not site["FEMA Map Date"]:
             site["FEMA Map Date"] = m_fema.group(3).strip()
     elif not site["FEMA Map #"] or not site["FEMA Map Date"]:
         m_fema2 = re.search(r'FEMA\s+(?:Map\s+(?:#|Number)|Special\s+Flood)[^\n\r]*?(\b\d{5,}[A-Z0-9]*\b)[^\n\r]*?(\b\d{1,2}/\d{1,2}/\d{2,4}\b)', full_doc_text, re.IGNORECASE)
         if m_fema2:
-            if not site["FEMA Map #"] or site["FEMA Map #"].lower() in ["map", "#"]: site["FEMA Map #"] = m_fema2.group(1)
+            if not site["FEMA Map #"] or site["FEMA Map #"].lower() in ["map", "#", ""]: site["FEMA Map #"] = m_fema2.group(1)
             if not site["FEMA Map Date"]: site["FEMA Map Date"] = m_fema2.group(2)
 
     # Utilities Typical for Market Area
-    typ_choice = extract_choice_from_row(words, y_typ, [("Yes", ["Yes"], (355, 400)), ("No", ["No"], (400, 445))], 340, 460, default_val="Yes", page=page, fitz_page=fitz_page)
-    raw_typ_desc = get_val(455, y_typ - 2, 588, y_typ + 8, strip_labels=False)
-    raw_typ_desc = re.sub(r'^(?:If\s+No,?\s*describe\.?\s*|describe\.?\s*)', '', raw_typ_desc, flags=re.IGNORECASE).strip()
-
-    site["Are the utilities and off-site improvements typical for the market area?"] = typ_choice or "Yes"
-    site["Are the utilities and off-site improvements typical for the market area? If No, describe"] = f"{typ_choice}: {raw_typ_desc}".strip(": ") if raw_typ_desc else (typ_choice or "Yes")
+    typ_choice = extract_choice_from_row(words, y_typ, [("Yes", ["Yes"], (245, 285)), ("No", ["No"], (285, 325))], 240, 330, default_val="Yes", page=page, fitz_page=fitz_page) or "Yes"
+    site["Are the utilities and off-site improvements typical for the market area?"] = typ_choice
+    site["Are the utilities and off-site improvements typical for the market area? If No, describe"] = typ_choice
 
     # Adverse Site Conditions
-    adv_choice = extract_choice_from_row(words, y_adv, [("Yes", ["Yes"], (455, 500)), ("No", ["No"], (500, 545))], 440, 560, default_val="No", page=page, fitz_page=fitz_page)
-    raw_adv_desc = get_val(28, y_adv + 6, 588, y_imp - 2, strip_labels=False)
+    adv_choice = extract_choice_from_row(words, y_adv, [("Yes", ["Yes"], (435, 475)), ("No", ["No"], (475, 515))], 430, 520, default_val="No", page=page, fitz_page=fitz_page) or "No"
+    raw_adv_desc = get_val(28, y_adv + 6, 588, y_imp_top - 2)
     raw_adv_desc = re.sub(r'^(?:If\s+Yes,?\s*describe\.?\s*)', '', raw_adv_desc, flags=re.IGNORECASE).strip()
+    raw_adv_desc = re.sub(r'(?:IMPROVEMENTS|General\s+Description).*$', '', raw_adv_desc, flags=re.IGNORECASE).strip()
 
     if adv_choice == "No":
         site["Are there any adverse site conditions or external factors (easements, encroachments, environmental conditions, land uses, etc.)? If Yes, describe"] = f"No: {raw_adv_desc}".strip(": ") if raw_adv_desc else "No"
@@ -1893,7 +1990,7 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     y_def = find_row_y(["physical deficiencies", "deficiencies"], 20, 250, y_cond - 2, 910) or 860.0
     y_conf = find_row_y(["generally conform", "conform to the neighborhood"], 20, 250, y_def - 2, 940) or (y_def + 40.0)
 
-    y_grid_top = find_row_y(["General Description"], 20, 160, 580, 640) or (y_imp + 2.0 if y_imp else 595.0)
+    y_grid_top = find_row_y(["General Description"], 20, 160, 580, 640) or (y_imp_top + 2.0 if y_imp_top else 595.0)
 
     # Dynamic Anchor Finding for All 12 Improvement Rows
     def find_imp_lbl(target, max_x=120, y_min=550, y_max=800):
@@ -1968,8 +2065,10 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     imp["One with Accessory Unit"] = "Yes" if u_acc else "No"
 
     fnd_checked = []
-    if is_box_checked(160, r1_t, 198, r1_b, "Slab") or is_box_checked(160, r1_t, 198, r1_b, "Concrete"): fnd_checked.append("Concrete Slab")
-    if is_box_checked(205, r1_t, 248, r1_b, "Crawl"): fnd_checked.append("Crawl Space")
+    if is_box_checked(140, r1_t, 195, r1_b, "Concrete Slab") or is_box_checked(140, r1_t, 195, r1_b, "Slab"):
+        fnd_checked.append("Concrete Slab")
+    if is_box_checked(195, r1_t, 250, r1_b, "Crawl Space") or is_box_checked(195, r1_t, 250, r1_b, "Crawl"):
+        fnd_checked.append("Crawl Space")
 
     imp["Foundation Walls (Material/Condition)"] = normalize_mat_cond(extract_cell_value(365, r1_t, 445, r1_b, ["Foundation", "Walls", "Foundation Walls", "materials/condition", "material", "condition"]))
     imp["Floors (Material/Condition)"] = normalize_mat_cond(extract_cell_value(500, r1_t, 588, r1_b, ["Floors", "materials/condition", "materials", "condition", "material"]))
@@ -1982,8 +2081,17 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     m_st = re.search(r'(\d+(?:\.\d+)?)', st_val)
     imp["# of Stories"] = m_st.group(1) if m_st else (st_val or "")
 
-    if is_box_checked(160, r2_t, 198, r2_b, "Full"): fnd_checked.append("Full Basement")
-    if is_box_checked(205, r2_t, 248, r2_b, "Partial"): fnd_checked.append("Partial Basement")
+    if is_box_checked(140, r2_t, 195, r2_b, "Full Basement") or is_box_checked(140, r2_t, 195, r2_b, "Full"):
+        fnd_checked.append("Full Basement")
+    if is_box_checked(195, r2_t, 250, r2_b, "Partial Basement") or is_box_checked(195, r2_t, 250, r2_b, "Partial"):
+        fnd_checked.append("Partial Basement")
+
+    if not fnd_checked:
+        if re.search(r'(?:\[[Xx8✓✔■]\]|[Xx8✓✔■])\s*Concrete\s*Slab', txt, re.I): fnd_checked.append("Concrete Slab")
+        if re.search(r'(?:\[[Xx8✓✔■]\]|[Xx8✓✔■])\s*Crawl\s*Space', txt, re.I): fnd_checked.append("Crawl Space")
+        if re.search(r'(?:\[[Xx8✓✔■]\]|[Xx8✓✔■])\s*Full\s*Basement', txt, re.I): fnd_checked.append("Full Basement")
+        if re.search(r'(?:\[[Xx8✓✔■]\]|[Xx8✓✔■])\s*Partial\s*Basement', txt, re.I): fnd_checked.append("Partial Basement")
+
     imp["Foundation Type"] = ", ".join(fnd_checked)
 
     imp["Exterior Walls (Material/Condition)"] = normalize_mat_cond(extract_cell_value(365, r2_t, 445, r2_b, ["Exterior", "Walls", "Exterior Walls", "materials/condition"]))
@@ -1996,9 +2104,13 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     t_choice = extract_choice_from_row(words, y_r3, [("Detached", ["Det.", "Det", "Detached"], (25, 58)), ("Attached", ["Att.", "Att", "Attached"], (65, 98)), ("Semi-Det.", ["S-Det", "End Unit", "Semi-Det"], (105, 145))], 20, 160, default_val="", page=page, fitz_page=fitz_page)
     imp["Type"] = t_choice or ""
 
-    ba_val = extract_cell_value(230, r3_t, 280, r3_b, ["Basement", "Area", "sq.ft.", "sq.", "ft.", "sqft", "Basement Area"])
-    m_ba = re.search(r'(\d+)', ba_val)
-    imp["Basement Area sq.ft."] = m_ba.group(1) if m_ba else ba_val
+    ba_val = extract_cell_value(225, r3_t, 295, r3_b, ["Basement", "Area", "sq.ft.", "sq.", "ft.", "sqft", "Basement Area", "Area sq.ft."])
+    m_ba = re.search(r'([\d,]+)', ba_val)
+    imp["Basement Area sq.ft."] = m_ba.group(1).replace(',', '') if m_ba else ba_val
+    if not imp["Basement Area sq.ft."]:
+        m_ba_txt = re.search(r'Basement\s+Area\s*[:\s]*([\d,]+)\s*(?:sq\.?\s*ft\.?)?', txt, re.IGNORECASE)
+        if m_ba_txt:
+            imp["Basement Area sq.ft."] = m_ba_txt.group(1).replace(',', '')
 
     imp["Roof Surface (Material/Condition)"] = normalize_mat_cond(extract_cell_value(365, r3_t, 445, r3_b, ["Roof", "Surface", "Roof Surface"]))
     imp["Trim/Finish (Material/Condition)"] = normalize_mat_cond(extract_cell_value(500, r3_t, 588, r3_b, ["Trim/Finish", "Trim", "Finish"]))
@@ -2010,9 +2122,13 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     s_choice = extract_choice_from_row(words, y_r4, [("Existing", ["Existing"], (25, 58)), ("Proposed", ["Proposed"], (65, 98)), ("Under Const.", ["Under Const", "Under"], (105, 145))], 20, 160, default_val="Existing", page=page, fitz_page=fitz_page)
     imp["Existing/Proposed/Under Const."] = s_choice or "Existing"
 
-    bf_val = extract_cell_value(230, r4_t, 285, r4_b, ["Basement", "Finish", "%", "Basement Finish"])
-    m_bf = re.search(r'(\d+)', bf_val)
+    bf_val = extract_cell_value(225, r4_t, 295, r4_b, ["Basement", "Finish", "%", "Basement Finish", "Finish %"])
+    m_bf = re.search(r'([\d]+)', bf_val)
     imp["Basement Finish %"] = m_bf.group(1) if m_bf else bf_val
+    if not imp["Basement Finish %"]:
+        m_bf_txt = re.search(r'Basement\s+Finish\s*[:\s]*([\d]+)\s*%', txt, re.IGNORECASE)
+        if m_bf_txt:
+            imp["Basement Finish %"] = m_bf_txt.group(1)
 
     imp["Gutters & Downspouts (Material/Condition)"] = normalize_mat_cond(extract_cell_value(365, r4_t, 445, r4_b, ["Gutters", "&", "Downspouts", "Gutters & Downspouts"]))
     imp["Bath Floor (Material/Condition)"] = normalize_mat_cond(extract_cell_value(500, r4_t, 588, r4_b, ["Bath", "Floor", "Bath Floor"]))
@@ -2100,11 +2216,11 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
 
     ht_oth = is_box_checked(160, r9_t, 198, r9_b, "Other")
     if ht_oth and not imp["Heating Type"]: imp["Heating Type"] = "Other"
-    fuel_val = extract_cell_value(230, r9_t, 295, r9_b, ["Fuel", "Other", "Gas:"])
-    if not fuel_val and any("gas" in w['text'].lower() for w in words if r9_t - 2 <= w['top'] <= r9_b + 2 and 160 <= w['x0'] <= 305):
-        fuel_val = "Gas"
-    elif not fuel_val and any("electric" in w['text'].lower() for w in words if r9_t - 2 <= w['top'] <= r9_b + 2 and 160 <= w['x0'] <= 305):
-        fuel_val = "Electric"
+    fuel_val = extract_cell_value(230, r9_t, 295, r9_b, ["Fuel", "Other", ":", "Fuel:"])
+    if not fuel_val:
+        m_fuel = re.search(r'\bFuel\s*[:\s]*([A-Za-z]+)\b', txt, re.IGNORECASE)
+        if m_fuel and m_fuel.group(1).lower() not in ["other", "heating", "cooling", "fireplace", "fuel", "fwa"]:
+            fuel_val = m_fuel.group(1)
     imp["Fuel"] = fuel_val
 
     if is_box_checked(300, r9_t, 335, r9_b, "Fireplace") or is_box_checked(320, r9_t, 365, r9_b, "Fireplace"): am_checked.append("Fireplace")
@@ -2226,9 +2342,16 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     }
 
 
-def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None, fitz_page=None):
+def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None, fitz_page=None, fitz_extra_pages=None):
     """Extracts the Sales Comparison Approach grid and Reconciliation."""
-    words = page_p2.extract_words()
+    if fitz_page is not None:
+        try:
+            fitz_words = fitz_page.get_text("words")
+            words = [{'x0': w[0], 'top': w[1], 'x1': w[2], 'bottom': w[3], 'text': w[4]} for w in fitz_words]
+        except Exception:
+            words = page_p2.extract_words()
+    else:
+        words = page_p2.extract_words()
     txt = page_p2.extract_text() or ""
 
     def get_cell(x0, y0, x1, y1):
@@ -2238,25 +2361,30 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
         return is_box_checked_in_page(words, bx0, by0, bx1, by1, kw_label=kw_label, page=page_p2, fitz_page=fitz_page)
 
     cols = {
-        "Subject": {"desc": (95, 185), "adj": None},
-        "COMPARABLE SALE #1": {"desc": (185, 260), "adj": (255, 330)},
-        "COMPARABLE SALE #2": {"desc": (315, 390), "adj": (385, 462)},
-        "COMPARABLE SALE #3": {"desc": (445, 520), "adj": (515, 592)},
+        "Subject": {"desc": (95, 195), "adj": None},
+        "COMPARABLE SALE #1": {"desc": (195, 260), "adj": (260, 326)},
+        "COMPARABLE SALE #2": {"desc": (326, 390), "adj": (390, 458)},
+        "COMPARABLE SALE #3": {"desc": (458, 520), "adj": (520, 590)},
     }
 
     def find_y(label_keyword, min_y=75, max_y=550):
         matches = [w['top'] for w in words if label_keyword.lower() in w['text'].lower() and w['x1'] <= 110 and min_y <= w['top'] <= max_y]
         return matches[0] if matches else None
 
+    y_data = find_y("Data", 130, 168) or 160.0
+    y_verif = find_y("Verification", 145, 180) or 171.5
+    y_conc = find_y("Concessions", 165, 215) or 195.0
+    y_date = find_y("Sale/Time", 185, 225) or find_y("Date", 185, 225) or 217.6
+
     row_anchors = [
         ("Address", find_y("Address", 75, 125) or 108.0),
         ("Proximity to Subject", find_y("Proximity", 95, 135) or 125.5),
         ("Sale Price", find_y("Price", 110, 145) or 137.0),
         ("Sale Price/Gross Liv. Area", find_y("Liv.", 120, 155) or find_y("Area", 120, 155) or 148.5),
-        ("Data Source(s)", find_y("Data", 130, 168) or 160.0),
-        ("Verification Source(s)", find_y("Verification", 145, 180) or 171.5),
-        ("Sales or Financing Concessions", find_y("Concessions", 165, 215) or 195.0),
-        ("Date of Sale/Time", find_y("Sale/Time", 185, 225) or find_y("Date", 185, 225) or 217.6),
+        ("Data Source(s)", y_data),
+        ("Verification Source(s)", y_verif),
+        ("Sales or Financing Concessions", y_conc),
+        ("Date of Sale/Time", y_date),
         ("Location", find_y("Location", 200, 235) or 229.1),
         ("Leasehold/Fee Simple", find_y("Leasehold", 215, 248) or 240.7),
         ("Site", find_y("Site", 225, 258) or 252.2),
@@ -2301,6 +2429,16 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                     if not matched_sp:
                         matched_sp = [w['text'] for w in words if w['x0'] >= dx0 - 2 and w['x1'] <= full_x1 + 2 and abs(w['top'] - y_row) <= 6.5 and re.search(r'\d{3,}', w['text'])]
                     val = matched_sp[-1] if matched_sp else ""
+            elif row_label == "Data Source(s)":
+                full_x1 = ax1 if ax1 else dx1
+                val = get_text_in(dx0, y_row - 6.0, full_x1, y_row + 6.0)
+            elif row_label == "Verification Source(s)":
+                full_x1 = ax1 if ax1 else dx1
+                val = get_text_in(dx0, y_row - 6.0, full_x1, y_row + 6.0)
+            elif row_label == "Sales or Financing Concessions":
+                y_top_c = (y_verif + 5.0) if y_verif else (y_row - 10.0)
+                y_bot_c = (y_date - 2.0) if y_date else (y_row + 15.0)
+                val = get_text_in(dx0, y_top_c, dx1, y_bot_c)
             elif row_label == "Above Grade Room Count":
                 w_rooms = [w for w in words if w['x0'] >= dx0 - 0.5 and w['x1'] <= dx1 + 0.5 and abs(w['top'] - y_row) <= 4.5 and w['text'] not in ["Total", "Bdrms.", "Baths", "Room", "Count"]]
                 w_rooms.sort(key=lambda x: x['x0'])
@@ -2313,6 +2451,14 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                     col_data["Total Rooms"] = ""
                     col_data["Bedrooms"] = room_vals[0]
                     col_data["Baths"] = room_vals[1]
+                elif len(room_vals) == 1:
+                    col_data["Total Rooms"] = room_vals[0]
+                    col_data["Bedrooms"] = ""
+                    col_data["Baths"] = ""
+                else:
+                    col_data["Total Rooms"] = ""
+                    col_data["Bedrooms"] = ""
+                    col_data["Baths"] = ""
                 val = " ".join(room_vals)
             elif row_label == "Net Adjustment (Total)":
                 full_x1 = ax1 if ax1 else dx1
@@ -2327,13 +2473,18 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                     matched_adj = [w['text'] for w in words if w['x0'] >= dx0 - 2 and w['x1'] <= full_x1 + 2 and y_row - 8.0 <= w['top'] <= y_row + 8.0 and re.search(r'\d{3,}', w['text'])]
                 val = matched_adj[-1] if matched_adj else ""
             else:
-                val = get_text_in(dx0, y_row - 4.5, dx1, y_row + 4.5)
+                val = get_text_in(dx0, y_row - 5.5, dx1, y_row + 5.5)
             
             col_data[row_label] = val
             
             if ax0 is not None:
-                if row_label not in ["Sale Price", "Net Adjustment (Total)", "Adjusted Sale Price of Comparables"]:
-                    adj_val = get_text_in(ax0, y_row - 4.5, ax1, y_row + 4.5)
+                if row_label == "Sales or Financing Concessions":
+                    y_top_c = (y_verif + 5.0) if y_verif else (y_row - 10.0)
+                    y_bot_c = (y_date - 2.0) if y_date else (y_row + 15.0)
+                    adj_val = get_text_in(ax0, y_top_c, ax1, y_bot_c)
+                    col_data[f"{row_label} Adjustment"] = adj_val
+                elif row_label not in ["Sale Price", "Data Source(s)", "Verification Source(s)", "Net Adjustment (Total)", "Adjusted Sale Price of Comparables"]:
+                    adj_val = get_text_in(ax0, y_row - 5.5, ax1, y_row + 5.5)
                     col_data[f"{row_label} Adjustment"] = adj_val
                 else:
                     col_data[f"{row_label} Adjustment"] = ""
@@ -2342,14 +2493,19 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
         grid[col_key] = col_data
 
     # Prior Sales for Subject & Comps 1-3
-    y_item_p2 = next((w['top'] for w in words if w['text'] == 'ITEM' and w['top'] > 550), None)
-    if not y_item_p2:
-        y_item_p2 = next((w['top'] for w in words if "date" in w['text'].lower() and "prior" in w['text'].lower() and w['top'] > 580), 600.0) - 11.5
+    y_item_p2 = next((w['top'] for w in words if w['text'].upper() == 'ITEM' and w['top'] > 500), None)
+    y_date_p2 = next((w['top'] for w in words if w['text'].lower() == 'date' and w['x0'] < 60 and w['top'] > 500), None)
+    if not y_date_p2 and y_item_p2 is not None:
+        y_date_p2 = y_item_p2 + 11.5
+    elif not y_item_p2 and y_date_p2 is not None:
+        y_item_p2 = y_date_p2 - 11.5
+    elif not y_date_p2 and not y_item_p2:
+        y_item_p2 = 600.0
+        y_date_p2 = 611.5
 
-    y_date_p2 = y_item_p2 + 11.5
-    y_price_p2 = y_item_p2 + 23.0
-    y_src_p2 = y_item_p2 + 34.5
-    y_eff_p2 = y_item_p2 + 46.5
+    y_price_p2 = (next((w['top'] for w in words if w['text'].lower() == 'price' and w['x0'] < 60 and w['top'] > y_date_p2), None) if y_date_p2 is not None else None) or ((y_date_p2 + 11.5) if y_date_p2 is not None else 623.0)
+    y_src_p2 = (next((w['top'] for w in words if w['text'].lower() == 'data' and w['x0'] < 60 and w['top'] > y_price_p2), None) if y_price_p2 is not None else None) or ((y_price_p2 + 11.5) if y_price_p2 is not None else 634.5)
+    y_eff_p2 = (next((w['top'] for w in words if w['text'].lower() == 'effective' and w['x0'] < 60 and w['top'] > y_src_p2), None) if y_src_p2 is not None else None) or ((y_src_p2 + 11.5) if y_src_p2 is not None else 646.0)
 
     def get_prior_cell(p_words, x0, x1, y_row):
         matched = [w for w in p_words if w['x0'] >= x0 - 2 and w['x1'] <= x1 + 2 and (abs(w['top'] - y_row) <= 4.5 or abs((w['top'] + w['bottom'])/2 - (y_row + 3.5)) <= 4.5) and w['x0'] >= 26.5 and w['text'] not in ["ITEM", "SUBJECT", "COMPARABLE", "SALE", "#1", "#2", "#3", "#4", "#5", "#6", "#", "1", "2", "3", "4", "5", "6", "Date", "of", "Prior", "Sale/Transfer", "Price", "Data", "Source(s)", "Effective", "Analysis", "prior", "sale"]]
@@ -2381,8 +2537,16 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
         elif page_extra_comps is not None:
             extra_pages = [page_extra_comps]
 
-        for page_ex in extra_pages:
-            words_ex = page_ex.extract_words()
+        for idx_ex, page_ex in enumerate(extra_pages):
+            fitz_ex = fitz_extra_pages[idx_ex] if (fitz_extra_pages and idx_ex < len(fitz_extra_pages)) else None
+            if fitz_ex is not None:
+                try:
+                    fitz_words_ex = fitz_ex.get_text("words")
+                    words_ex = [{'x0': w[0], 'top': w[1], 'x1': w[2], 'bottom': w[3], 'text': w[4]} for w in fitz_words_ex]
+                except Exception:
+                    words_ex = page_ex.extract_words()
+            else:
+                words_ex = page_ex.extract_words()
             txt_ex = page_ex.extract_text() or ""
             if not words_ex:
                 continue
@@ -2421,15 +2585,15 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
 
             if has_subj:
                 slot_boxes = [
-                    {"desc": (190, 260), "adj": (260, 324), "prior": (240, 330)},
-                    {"desc": (320, 390), "adj": (390, 453), "prior": (350, 440)},
-                    {"desc": (450, 520), "adj": (520, 588), "prior": (460, 560)}
+                    {"desc": (195, 260), "adj": (260, 326), "prior": (245, 355)},
+                    {"desc": (326, 390), "adj": (390, 458), "prior": (355, 465)},
+                    {"desc": (458, 520), "adj": (520, 590), "prior": (465, 585)}
                 ]
             else:
                 slot_boxes = [
-                    {"desc": (180, 260), "adj": (255, 330), "prior": (240, 355)},
-                    {"desc": (310, 390), "adj": (385, 462), "prior": (350, 465)},
-                    {"desc": (440, 520), "adj": (515, 592), "prior": (460, 585)}
+                    {"desc": (180, 260), "adj": (255, 326), "prior": (245, 355)},
+                    {"desc": (326, 390), "adj": (385, 458), "prior": (355, 465)},
+                    {"desc": (458, 520), "adj": (515, 590), "prior": (465, 585)}
                 ]
 
             cols_ex = {}
@@ -2519,6 +2683,17 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                         if not matched_sp:
                             matched_sp = [w['text'] for w in words_ex if w['x0'] >= dx0 - 2 and w['x1'] <= full_x1 + 2 and abs(w['top'] - y_row) <= 6.5 and re.search(r'\d{3,}', w['text'])]
                         val = matched_sp[-1] if matched_sp else ""
+                    elif row_label == "Data Source(s)":
+                        full_x1 = ax1 if ax1 else dx1
+                        val = get_text_in_ex(dx0, y_row - 6.0, full_x1, y_row + 6.0)
+                    elif row_label == "Verification Source(s)":
+                        full_x1 = ax1 if ax1 else dx1
+                        val = get_text_in_ex(dx0, y_row - 6.0, full_x1, y_row + 6.0)
+                    elif row_label == "Sales or Financing Concessions":
+                        y_verif_ex_top = y_data_ex + 11.5
+                        y_top_c_ex = y_verif_ex_top + 5.0
+                        y_bot_c_ex = y_date_ex - 2.0
+                        val = get_text_in_ex(dx0, y_top_c_ex, dx1, y_bot_c_ex)
                     elif row_label == "Above Grade Room Count":
                         w_rooms = [w for w in words_ex if w['x0'] >= dx0 - 0.5 and w['x1'] <= dx1 + 0.5 and abs(w['top'] - y_row) <= 4.5 and w['text'] not in ["Total", "Bdrms.", "Baths", "Room", "Count"]]
                         w_rooms.sort(key=lambda x: x['x0'])
@@ -2531,6 +2706,14 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                             col_data["Total Rooms"] = ""
                             col_data["Bedrooms"] = room_vals[0]
                             col_data["Baths"] = room_vals[1]
+                        elif len(room_vals) == 1:
+                            col_data["Total Rooms"] = room_vals[0]
+                            col_data["Bedrooms"] = ""
+                            col_data["Baths"] = ""
+                        else:
+                            col_data["Total Rooms"] = ""
+                            col_data["Bedrooms"] = ""
+                            col_data["Baths"] = ""
                         val = " ".join(room_vals)
                     elif row_label == "Net Adjustment (Total)":
                         full_x1 = ax1 if ax1 else dx1
@@ -2545,13 +2728,19 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                             matched_adj = [w['text'] for w in words_ex if w['x0'] >= dx0 - 2 and w['x1'] <= full_x1 + 2 and y_row - 8.0 <= w['top'] <= y_row + 8.0 and re.search(r'\d{3,}', w['text'])]
                         val = matched_adj[-1] if matched_adj else ""
                     else:
-                        val = get_text_in_ex(dx0, y_row - 4.5, dx1, y_row + 4.5)
+                        val = get_text_in_ex(dx0, y_row - 5.5, dx1, y_row + 5.5)
                     
                     col_data[row_label] = val
                     
                     if ax0 is not None:
-                        if row_label not in ["Sale Price", "Net Adjustment (Total)", "Adjusted Sale Price of Comparables"]:
-                            adj_val = get_text_in_ex(ax0, y_row - 4.5, ax1, y_row + 4.5)
+                        if row_label == "Sales or Financing Concessions":
+                            y_verif_ex_top = y_data_ex + 11.5
+                            y_top_c_ex = y_verif_ex_top + 5.0
+                            y_bot_c_ex = y_date_ex - 2.0
+                            adj_val = get_text_in_ex(ax0, y_top_c_ex, ax1, y_bot_c_ex)
+                            col_data[f"{row_label} Adjustment"] = adj_val
+                        elif row_label not in ["Sale Price", "Data Source(s)", "Verification Source(s)", "Net Adjustment (Total)", "Adjusted Sale Price of Comparables"]:
+                            adj_val = get_text_in_ex(ax0, y_row - 5.5, ax1, y_row + 5.5)
                             col_data[f"{row_label} Adjustment"] = adj_val
                         else:
                             col_data[f"{row_label} Adjustment"] = ""
@@ -2561,22 +2750,24 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
                 if col_data.get("Address") or col_data.get("Sale Price") or col_data.get("Date of Sale/Time") or col_data.get("Gross Living Area"):
                     grid[col_key] = col_data
 
-            y_item_ex = next((w['top'] for w in words_ex if w['text'] == 'ITEM' and w['top'] > 500), None)
-            if not y_item_ex:
-                y_item_ex = next((w['top'] for w in words_ex if "date" in w['text'].lower() and "prior" in w['text'].lower() and w['top'] > 500), None)
-            
-            if y_item_ex:
-                y_date_ex = y_item_ex + 11.5
-                y_price_ex = y_item_ex + 23.0
-                y_src_ex = y_item_ex + 34.5
-                y_eff_ex = y_item_ex + 46.5
+            y_item_ex = next((w['top'] for w in words_ex if w['text'].upper() == 'ITEM' and w['top'] > 440), None)
+            y_date_ex_prior = next((w['top'] for w in words_ex if w['text'].lower() == 'date' and w['x0'] < 60 and w['top'] > 440), None)
+            if not y_date_ex_prior and y_item_ex is not None:
+                y_date_ex_prior = y_item_ex + 11.5
+            elif not y_item_ex and y_date_ex_prior is not None:
+                y_item_ex = y_date_ex_prior - 11.5
+
+            if y_date_ex_prior is not None:
+                y_price_ex_prior = (next((w['top'] for w in words_ex if w['text'].lower() == 'price' and w['x0'] < 60 and w['top'] > y_date_ex_prior), None)) or (y_date_ex_prior + 11.5)
+                y_src_ex_prior = (next((w['top'] for w in words_ex if w['text'].lower() == 'data' and w['x0'] < 60 and w['top'] > y_price_ex_prior), None)) or (y_price_ex_prior + 11.5)
+                y_eff_ex_prior = (next((w['top'] for w in words_ex if w['text'].lower() == 'effective' and w['x0'] < 60 and w['top'] > y_src_ex_prior), None)) or (y_src_ex_prior + 11.5)
 
                 for col_key, (px0, px1) in prior_cols_ex.items():
                     if col_key in grid:
-                        d_val = get_prior_cell(words_ex, px0, px1, y_date_ex)
-                        p_val = get_prior_cell(words_ex, px0, px1, y_price_ex)
-                        s_val = get_prior_cell(words_ex, px0, px1, y_src_ex)
-                        e_val = get_prior_cell(words_ex, px0, px1, y_eff_ex)
+                        d_val = get_prior_cell(words_ex, px0, px1, y_date_ex_prior)
+                        p_val = get_prior_cell(words_ex, px0, px1, y_price_ex_prior)
+                        s_val = get_prior_cell(words_ex, px0, px1, y_src_ex_prior)
+                        e_val = get_prior_cell(words_ex, px0, px1, y_eff_ex_prior)
                         grid[col_key]["Date of Prior Sale/Transfer"] = d_val
                         grid[col_key]["Price of Prior Sale/Transfer"] = p_val
                         grid[col_key]["Data Source(s) for prior sale"] = s_val
@@ -2610,10 +2801,17 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
     # Reconciliation
     recon = {k: "" for k in RECONCILIATION_FIELDS}
     
-    y_ind = next((w['top'] for w in words if 'indicated' in w['text'].lower() and w['top'] > 780 and w['x0'] < 100), 820.0)
+    # Reconciliation Indicated Values Row Anchor Discovery
+    w_cost_lbl = [w for w in words if 'cost' in w['text'].lower() and 780 <= w['top'] <= 860 and 240 <= w['x0'] <= 330]
+    w_sc_lbl = [w for w in words if 'sales' in w['text'].lower() and 780 <= w['top'] <= 860 and w['x0'] < 160]
+    w_ind_lbl = [w for w in words if 'indicated' in w['text'].lower() and 780 <= w['top'] <= 860 and w['x0'] < 100]
+
+    y_sc_row = w_sc_lbl[-1]['top'] if w_sc_lbl else (w_ind_lbl[-1]['top'] if w_ind_lbl else 814.7)
+    y_cost_row = w_cost_lbl[0]['top'] if w_cost_lbl else y_sc_row
+    y_ind = y_sc_row
 
     # Indicated Value by: Sales Comparison Approach
-    w_sc = [w['text'] for w in words if 140 <= w['x0'] <= 270 and abs(w['top'] - y_ind) <= 12.0 and re.search(r'\d{3,}', w['text'])]
+    w_sc = [w['text'] for w in words if 160 <= w['x0'] <= 270 and abs(w['top'] - y_sc_row) <= 10.0 and re.search(r'\d{3,}', w['text'])]
     v_sc = w_sc[0] if w_sc else ""
     if not v_sc:
         m_sc = re.search(r'Sales\s+Comparison\s+Approach\s*\$?\s*([\d,]+)', txt, re.IGNORECASE)
@@ -2623,22 +2821,27 @@ def extract_page_2_sales_grid_and_reconciliation(page_p2, page_extra_comps=None,
     recon['Indicated Value by: Sales Comparison Approach'] = v_sc_clean or v_sc
 
     # Cost Approach Indicated Value
-    w_ca = [w['text'] for w in words if 310 <= w['x0'] <= 420 and abs(w['top'] - y_ind) <= 12.0 and re.search(r'\d{3,}', w['text'])]
+    w_ca = [w['text'] for w in words if 330 <= w['x0'] <= 430 and abs(w['top'] - y_cost_row) <= 10.0 and re.search(r'\d{3,}', w['text'])]
     v_cost = w_ca[0] if w_ca else ""
     if not v_cost:
         m_c = re.search(r'Cost\s+Approach\s*(?:\([^\)]*\))?\s*\$?\s*([\d,]+)', txt, re.IGNORECASE)
         v_cost = m_c.group(1) if m_c else ""
     v_cost_clean = re.sub(r'[^\d,]', '', v_cost)
     recon['Cost Approach (if developed)'] = v_cost_clean or v_cost
+    recon['Cost Approach (if developed) $'] = v_cost_clean or v_cost
+    recon['Cost Approach'] = v_cost_clean or v_cost
 
     # Income Approach Indicated Value
-    w_ia = [w['text'] for w in words if 480 <= w['x0'] <= 580 and abs(w['top'] - y_ind) <= 12.0 and re.search(r'\d{3,}', w['text'])]
+    w_inc_lbl = [w for w in words if 'income' in w['text'].lower() and 780 <= w['top'] <= 860 and 400 <= w['x0'] <= 500]
+    y_inc_row = w_inc_lbl[0]['top'] if w_inc_lbl else y_sc_row
+    w_ia = [w['text'] for w in words if 500 <= w['x0'] <= 585 and abs(w['top'] - y_inc_row) <= 10.0 and re.search(r'\d{3,}', w['text'])]
     v_inc = w_ia[0] if w_ia else ""
     if not v_inc:
         m_i = re.search(r'Income\s+Approach\s*(?:\([^\)]*\))?\s*\$?\s*([\d,]+)', txt, re.IGNORECASE)
         v_inc = m_i.group(1) if m_i else ""
     v_inc_clean = re.sub(r'[^\d,]', '', v_inc)
     recon['Income Approach (if developed) $'] = v_inc_clean or v_inc
+    recon['Income Approach (if developed)'] = v_inc_clean or v_inc
     recon['Income Approach (if developed) $ Comment'] = ""
 
     # As is / conditions
@@ -2687,102 +2890,214 @@ def extract_cost_approach_section(page_p3, full_doc_text="", fitz_page=None):
         return cost
 
     if fitz_page is not None:
-        words = fitz_page.get_text("words")
+        raw_words = fitz_page.get_text("words")
+        words = [{'x0': w[0], 'top': w[1], 'x1': w[2], 'bottom': w[3], 'text': w[4]} for w in raw_words]
         txt = fitz_page.get_text("text") or ""
-    else:
-        raw_w = page_p3.extract_words()
-        words = [(w['x0'], w['top'], w['x1'], w['bottom'], w['text']) for w in raw_w]
+    elif page_p3 is not None:
+        words = page_p3.extract_words() if hasattr(page_p3, 'extract_words') else []
         txt = page_p3.extract_text() or ""
+    else:
+        words = []
+        txt = full_doc_text or ""
 
     # Locate section headers / anchors dynamically
-    w_cost_hdr = [w for w in words if "cost" in w[4].lower() and "approach" in w[4].lower() and w[1] > 30 and w[0] < 250]
-    w_income_hdr = [w for w in words if "income" in w[4].lower() and "approach" in w[4].lower() and w[1] > 300 and w[0] < 250]
-    
-    y_cost_start = w_cost_hdr[0][1] if w_cost_hdr else 450.0
-    y_income_start = w_income_hdr[0][1] if w_income_hdr else 710.0
+    y_cost_start = 35.0
+    if fitz_page is not None:
+        rects = fitz_page.search_for("COST APPROACH") or fitz_page.search_for("COST APPROACH TO VALUE")
+        if rects:
+            y_cost_start = rects[0].y0
+    if y_cost_start == 35.0:
+        cost_words = [w for w in words if w['text'].lower() == "cost" and 20.0 <= w['top'] <= 250.0 and w['x0'] < 250.0]
+        if cost_words:
+            y_cost_start = cost_words[0]['top']
 
-    w_supp = [w for w in words if "support" in w[4].lower() and y_cost_start <= w[1] < y_income_start and w[0] < 120]
-    w_est = [w for w in words if ("estimated" in w[4].lower() or "reproduction" in w[4].lower() or "replacement" in w[4].lower()) and y_cost_start <= w[1] < y_income_start and w[0] < 120]
-    w_src = [w for w in words if "source" in w[4].lower() and "cost" in w[4].lower() and y_cost_start <= w[1] < y_income_start and w[0] < 120]
-    w_qual = [w for w in words if "quality" in w[4].lower() and y_cost_start <= w[1] < y_income_start and w[0] < 120]
-    w_comm = [w for w in words if "comments" in w[4].lower() and y_cost_start <= w[1] < y_income_start and w[0] < 120]
-    w_life = [w for w in words if "remaining" in w[4].lower() and y_cost_start <= w[1] < y_income_start and w[0] < 120]
+    y_income_start = 310.0
+    if fitz_page is not None:
+        rects_inc = fitz_page.search_for("INCOME APPROACH") or fitz_page.search_for("INCOME APPROACH TO VALUE")
+        if rects_inc:
+            y_income_start = rects_inc[0].y0
+        else:
+            rects_pud = fitz_page.search_for("PROJECT INFORMATION") or fitz_page.search_for("PUD INFORMATION")
+            if rects_pud:
+                y_income_start = max(260.0, rects_pud[0].y0 - 100.0)
+    if y_income_start == 310.0:
+        inc_words = [w for w in words if w['text'].lower() == "income" and 200.0 <= w['top'] <= 500.0 and w['x0'] < 250.0]
+        if inc_words:
+            y_income_start = inc_words[0]['top']
 
-    y_supp_lbl = w_supp[0][1] if w_supp else (y_cost_start + 25.0)
-    y_est_lbl = w_est[0][1] if w_est else (y_supp_lbl + 50.0)
-    y_src_lbl = w_src[0][1] if w_src else (y_est_lbl + 15.0)
-    y_qual_lbl = w_qual[0][1] if w_qual else (y_src_lbl + 12.0)
-    y_comm_lbl = w_comm[0][1] if w_comm else (y_qual_lbl + 12.0)
-    y_life_lbl = w_life[0][1] if w_life else (y_income_start - 25.0)
+    # Locate row labels inside Cost Approach (y between y_cost_start and y_income_start)
+    def find_label_y(kw_list, y_fallback, x_max=150.0):
+        if fitz_page is not None:
+            for kw in kw_list:
+                rects = fitz_page.search_for(kw)
+                valid_rects = [r for r in rects if y_cost_start <= r.y0 < y_income_start and r.x0 <= x_max]
+                if valid_rects:
+                    return valid_rects[0].y0
+        cand = [
+            w for w in words
+            if any(k.lower() in w['text'].lower() for k in kw_list)
+            and y_cost_start <= w['top'] < y_income_start and w['x0'] <= x_max
+        ]
+        return cand[0]['top'] if cand else y_fallback
+
+    y_supp_lbl = find_label_y(["Support for the opinion", "Support for", "Support"], y_cost_start + 25.0)
+    y_est_lbl = find_label_y(["ESTIMATED", "Reproduction", "Replacement"], y_supp_lbl + 45.0)
+    y_src_lbl = find_label_y(["Source of cost data", "Source of cost", "Source"], y_est_lbl + 16.0)
+    y_qual_lbl = find_label_y(["Quality rating", "Quality"], y_src_lbl + 14.0)
+    y_comm_lbl = find_label_y(["Comments on Cost Approach", "Comments on", "Comments"], y_qual_lbl + 14.0)
+    y_life_lbl = find_label_y(["Remaining Economic Life", "Economic Life", "Remaining"], y_income_start - 25.0, x_max=250.0)
 
     # 1. Support for opinion of site value
     supp_words = [
-        w[4] for w in words
-        if (y_supp_lbl + 6.0 <= w[1] <= y_est_lbl - 2.5) and 26.5 <= w[0] <= 585
-        and w[4] not in ["Support", "for", "the", "opinion", "of", "site", "value", "(summary", "comparable", "land", "sales", "or", "other", "methods", "estimating", "value)", "COST", "APPROACH", "C", "O", "S", "T"]
+        w['text'] for w in words
+        if (y_supp_lbl + 5.0 <= w['top'] <= y_est_lbl - 2.0) and 25.0 <= w['x0'] <= 585.0
+        and w['text'] not in [
+            "Support", "for", "the", "opinion", "of", "site", "value", "(summary", "comparable",
+            "land", "sales", "or", "other", "methods", "estimating", "value)", "COST", "APPROACH",
+            "C", "O", "S", "T", "ESTIMATED", "REPRODUCTION", "REPLACEMENT", "COST", "NEW"
+        ]
     ]
     supp_val = " ".join(supp_words).strip()
     supp_val = re.sub(r'^(?:Support\s+for\s+the\s+opinion[^\)]*\)\.?\s*)', '', supp_val, flags=re.IGNORECASE).strip()
     if not supp_val:
-        m_supp = re.search(r'Support for the opinion of site value[^\n]*\.\n?(.*?)(?=ESTIMATED|Source of cost data|\n\n)', txt, re.DOTALL | re.IGNORECASE)
+        m_supp = re.search(r'Support for the opinion of site value[^\n]*\.\s*\n?(.*?)(?=ESTIMATED|Source of cost data|OPINION OF SITE VALUE|\n\n)', txt, re.DOTALL | re.IGNORECASE)
         if m_supp:
             supp_val = " ".join(m_supp.group(1).split()).strip()
 
     # 2. Reproduction vs Replacement
     est_choice = ""
-    for w in words:
-        if abs(w[1] - y_est_lbl) <= 7.0:
-            if w[4].upper() in ['X', '8', '☒', '☑', '✓']:
-                if 25 <= w[0] <= 110: est_choice = "REPRODUCTION"
-                elif 110 < w[0] <= 220: est_choice = "REPLACEMENT"
+    repro_checked = False
+    repl_checked = False
+
+    repro_boxes = []
+    repl_boxes = []
+    if fitz_page is not None:
+        try:
+            r_hits = fitz_page.search_for("Reproduction")
+            repro_boxes = [r for r in r_hits if y_cost_start - 10.0 <= r.y0 <= y_income_start and r.x0 < 300.0]
+            p_hits = fitz_page.search_for("Replacement")
+            repl_boxes = [r for r in p_hits if y_cost_start - 10.0 <= r.y0 <= y_income_start and r.x0 < 350.0]
+        except Exception:
+            pass
+
+    if repro_boxes:
+        r_rect = repro_boxes[0]
+        repro_checked = is_box_checked_in_page(
+            words, max(0, r_rect.x0 - 22.0), r_rect.y0 - 4.0, r_rect.x0 + 2.0, r_rect.y1 + 4.0,
+            kw_label=["Reproduction", "REPRODUCTION"], page=page_p3, fitz_page=fitz_page
+        )
+        if not repro_checked:
+            repro_checked = check_mark_in_box(words, r_rect.x0 - 24.0, r_rect.y0 - 5.0, r_rect.x0 + 2.0, r_rect.y1 + 5.0) \
+                or (fitz_page and check_box_font_rawdict(fitz_page, r_rect.x0 - 24.0, r_rect.y0 - 5.0, r_rect.x0 + 2.0, r_rect.y1 + 5.0)) \
+                or (fitz_page and check_box_pixel_density(fitz_page, r_rect.x0 - 22.0, r_rect.y0 - 4.0, r_rect.x0 - 1.0, r_rect.y1 + 4.0, min_dark_ratio=0.08))
+
+    if repl_boxes:
+        p_rect = repl_boxes[0]
+        repl_checked = is_box_checked_in_page(
+            words, max(0, p_rect.x0 - 22.0), p_rect.y0 - 4.0, p_rect.x0 + 2.0, p_rect.y1 + 4.0,
+            kw_label=["Replacement", "REPLACEMENT"], page=page_p3, fitz_page=fitz_page
+        )
+        if not repl_checked:
+            repl_checked = check_mark_in_box(words, p_rect.x0 - 24.0, p_rect.y0 - 5.0, p_rect.x0 + 2.0, p_rect.y1 + 5.0) \
+                or (fitz_page and check_box_font_rawdict(fitz_page, p_rect.x0 - 24.0, p_rect.y0 - 5.0, p_rect.x0 + 2.0, p_rect.y1 + 5.0)) \
+                or (fitz_page and check_box_pixel_density(fitz_page, p_rect.x0 - 22.0, p_rect.y0 - 4.0, p_rect.x0 - 1.0, p_rect.y1 + 4.0, min_dark_ratio=0.08))
+
+    if not repro_checked and not repl_checked:
+        repro_checked = is_box_checked_in_page(words, 20.0, y_est_lbl - 6.0, 125.0, y_est_lbl + 14.0, kw_label=["Reproduction", "REPRODUCTION"], page=page_p3, fitz_page=fitz_page)
+        repl_checked = is_box_checked_in_page(words, 120.0, y_est_lbl - 6.0, 260.0, y_est_lbl + 14.0, kw_label=["Replacement", "REPLACEMENT"], page=page_p3, fitz_page=fitz_page)
+
+    if repro_checked and not repl_checked:
+        est_choice = "REPRODUCTION"
+    elif repl_checked and not repro_checked:
+        est_choice = "REPLACEMENT"
+
     if not est_choice:
-        if re.search(r'(?:\[[Xx8]\]|X|8)\s*Reproduction', txt, re.IGNORECASE): est_choice = "REPRODUCTION"
-        elif re.search(r'(?:\[[Xx8]\]|X|8)\s*Replacement', txt, re.IGNORECASE): est_choice = "REPLACEMENT"
+        for w in words:
+            if abs(w['top'] - y_est_lbl) <= 9.0:
+                if is_glyph_check(w['text']):
+                    if 20.0 <= w['x0'] <= 120.0: est_choice = "REPRODUCTION"
+                    elif 120.0 < w['x0'] <= 260.0: est_choice = "REPLACEMENT"
+
+    if not est_choice:
+        if re.search(r'(?:\[\s*[Xx8✓✔■•]\s*\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8✓✔■•])\s*Reproduction', txt, re.IGNORECASE):
+            est_choice = "REPRODUCTION"
+        elif re.search(r'(?:\[\s*[Xx8✓✔■•]\s*\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8✓✔■•])\s*Replacement', txt, re.IGNORECASE):
+            est_choice = "REPLACEMENT"
+        elif re.search(r'Reproduction\s*(?:\[\s*[Xx8✓✔■•]\s*\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8✓✔■•])', txt, re.IGNORECASE):
+            est_choice = "REPRODUCTION"
+        elif re.search(r'Replacement\s*(?:\[\s*[Xx8✓✔■•]\s*\]|[\u2611\u2612\u2713\u2714\u25a0\uf078\uf0fc\uf0fe]|[Xx8✓✔■•])', txt, re.IGNORECASE):
+            est_choice = "REPLACEMENT"
+
+    if not est_choice:
+        m_cost_context = re.search(r'(?:COST\s+APPROACH|SITE\s+VALUE).*?(?:RECONCILIATION|INCOME\s+APPROACH|Page\s+3|\Z)', txt, re.DOTALL | re.IGNORECASE)
+        cost_subtext = m_cost_context.group(0) if m_cost_context else txt
+        if re.search(r'\bReproduction\s+Cost(?:\s+New)?\b', cost_subtext, re.IGNORECASE):
+            est_choice = "REPRODUCTION"
+        elif re.search(r'\bReplacement\s+Cost(?:\s+New)?\b', cost_subtext, re.IGNORECASE):
+            est_choice = "REPLACEMENT"
+        elif "reproduction" in cost_subtext.lower() and "replacement" not in cost_subtext.lower():
+            est_choice = "REPRODUCTION"
+        elif "replacement" in cost_subtext.lower() and "reproduction" not in cost_subtext.lower():
+            est_choice = "REPLACEMENT"
+        elif "reproduction" not in cost_subtext.lower() and ("cost-new" in cost_subtext.lower() or "cost new" in cost_subtext.lower()):
+            est_choice = "REPLACEMENT"
 
     # 3. Source of cost data
     src_words = [
-        w[4] for w in words
-        if abs(w[1] - y_src_lbl) <= 6.0 and 75 <= w[0] <= 295
-        and w[4] not in ["Source", "of", "cost", "data"]
+        w['text'] for w in words
+        if abs(w['top'] - y_src_lbl) <= 7.0 and 75.0 <= w['x0'] <= 295.0
+        and w['text'].lower() not in ["source", "of", "cost", "data"]
     ]
     src_val = " ".join(src_words).strip()
     if not src_val:
-        m_src = re.search(r'Source of cost data\s*([^\n]+)', txt, re.IGNORECASE)
+        m_src = re.search(r'Source of cost data\s*[:\s]*([^\n]+)', txt, re.IGNORECASE)
         if m_src:
-            src_val = m_src.group(1).split("Dwelling")[0].split("=")[0].strip()
+            src_val = m_src.group(1).split("Dwelling")[0].split("=")[0].split("Quality")[0].strip()
 
     # 4. Quality Rating & Effective Date
-    w_eff_label = [w for w in words if 'effective' in w[4].lower() and abs(w[1] - y_qual_lbl) <= 6.0]
-    x_eff_start = w_eff_label[0][0] if w_eff_label else 170.0
-    x_eff_end = (w_eff_label[0][2] + 2.0) if w_eff_label else 240.0
+    eff_anchors = [w for w in words if 'effective' in w['text'].lower() and abs(w['top'] - y_qual_lbl) <= 8.0]
+    x_eff_start = eff_anchors[0]['x0'] if eff_anchors else 170.0
+    x_eff_end = (eff_anchors[0]['x1'] + 2.0) if eff_anchors else 240.0
 
     qual_words = [
-        w[4] for w in words
-        if abs(w[1] - y_qual_lbl) <= 6.0 and 95 <= w[0] < x_eff_start
-        and w[4] not in ["Quality", "rating", "from", "cost", "service"]
+        w['text'] for w in words
+        if abs(w['top'] - y_qual_lbl) <= 7.0 and 90.0 <= w['x0'] < x_eff_start
+        and w['text'].lower() not in ["quality", "rating", "from", "cost", "service"]
     ]
     qual_val = " ".join(qual_words).strip()
+    if not qual_val:
+        m_qual = re.search(r'Quality\s+rating\s+from\s+cost\s+service\s*[:\s]*([^\n]+?)(?=Effective\s+date|Bsmt|Dwelling|\Z)', txt, re.IGNORECASE)
+        if m_qual:
+            qual_val = m_qual.group(1).strip()
 
     eff_words = [
-        w[4] for w in words
-        if abs(w[1] - y_qual_lbl) <= 6.0 and x_eff_end <= w[0] <= 295
-        and w[4] not in ["Effective", "date", "of", "cost", "data", "Bsmt:", "Dwelling"]
+        w['text'] for w in words
+        if abs(w['top'] - y_qual_lbl) <= 7.0 and x_eff_end <= w['x0'] <= 295.0
+        and w['text'].lower() not in ["effective", "date", "of", "cost", "data", "bsmt:", "dwelling", "bsmt"]
     ]
     eff_val = " ".join(eff_words).strip()
+    if not eff_val:
+        m_eff = re.search(r'Effective\s+date\s+of\s+cost\s+data\s*[:\s]*([^\n]+?)(?=Bsmt|Dwelling|Comments|\Z)', txt, re.IGNORECASE)
+        if m_eff:
+            eff_val = m_eff.group(1).strip()
 
     # 5. Comments on Cost Approach
     comm_words = [
-        w[4] for w in words
-        if (y_comm_lbl + 6.0 <= w[1] <= y_life_lbl - 2.5) and 26.5 <= w[0] <= 295
-        and w[4] not in ["Comments", "on", "Cost", "Approach", "(gross", "living", "area", "calculations,", "depreciation,", "etc.)", "COST", "TCARTNOC", "C", "O", "N", "T", "R", "A", "C", "T", "R", "O", "A", "C", "H"]
+        w['text'] for w in words
+        if (y_comm_lbl + 5.0 <= w['top'] <= y_life_lbl - 2.0) and 25.0 <= w['x0'] <= 295.0
+        and w['text'] not in ["Comments", "on", "Cost", "Approach", "(gross", "living", "area", "calculations,", "depreciation,", "etc.)", "COST"]
     ]
     comm_val = " ".join(comm_words).strip()
+    if not comm_val:
+        m_comm = re.search(r'Comments on Cost Approach[^\n]*\.\s*\n?(.*?)(?=Estimated Remaining Economic Life|Remaining Economic Life|INCOME APPROACH|OPINION OF SITE VALUE|\n\n)', txt, re.DOTALL | re.IGNORECASE)
+        if m_comm:
+            comm_val = " ".join(m_comm.group(1).split()).strip()
 
     # 6. Remaining Economic Life
     life_words = [
-        w[4] for w in words
-        if abs(w[1] - y_life_lbl) <= 6.0 and 170 <= w[0] <= 295
-        and re.match(r'^\d+$', w[4]) and w[4] not in ["1004", "70", "2005", "2006", "3", "6"]
+        w['text'] for w in words
+        if abs(w['top'] - y_life_lbl) <= 8.0 and 150.0 <= w['x0'] <= 295.0
+        and re.match(r'^\d+$', w['text']) and w['text'] not in ["1004", "70", "2005", "2006", "3", "6"]
     ]
     life_val = f"{life_words[0]} Years" if life_words else ""
     if not life_val:
@@ -2795,28 +3110,115 @@ def extract_cost_approach_section(page_p3, full_doc_text="", fitz_page=None):
         if not val_str: return ""
         m = re.findall(r'[\d,]+(?:\.\d{2})?', str(val_str))
         if not m: return ""
-        candidates = [c for c in m if len(c) > 0 and c not in ["1004", "70", "2005", "2006", "3", "6"]]
+        candidates = [c.replace(' ', '') for c in m if c and c not in ["1004", "70", "2005", "2006", "3", "6"]]
         return candidates[-1] if candidates else ""
 
-    def find_calc_row_value(kw_list, y_min=y_supp_lbl, y_max=y_income_start):
-        anchor = [w for w in words if any(w[4].lower().startswith(k) or k in w[4].lower() for k in kw_list) and 280 <= w[0] <= 450 and y_min <= w[1] <= y_max]
-        if not anchor:
-            return ""
-        row_y = anchor[0][1]
-        val_words = [w[4] for w in words if abs(w[1] - row_y) <= 7.0 and w[0] >= 505 and w[4] not in ["$", "=", "(", ")", "=$", "=$(", "..", "."]]
-        raw_val = " ".join(val_words).strip()
-        return clean_num(raw_val)
+    def find_calc_row_value(kw_list, y_min=y_cost_start, y_max=y_income_start + 15.0, regex_pat=None):
+        anchor_y = None
+        if fitz_page is not None:
+            for kw in kw_list:
+                rects = fitz_page.search_for(kw)
+                valid_rects = [r for r in rects if y_min <= r.y0 <= y_max and r.x0 >= 240.0]
+                if valid_rects:
+                    anchor_y = (valid_rects[0].y0 + valid_rects[0].y1) / 2.0
+                    break
 
-    opinion_site = find_calc_row_value(["opinion"], y_supp_lbl, y_comm_lbl)
-    dwelling_cost = find_calc_row_value(["dwelling"], y_supp_lbl, y_comm_lbl + 15)
-    basement_cost = find_calc_row_value(["bsmt", "basement"], y_supp_lbl, y_comm_lbl + 25)
-    deck_cost = find_calc_row_value(["deck", "patio"], y_supp_lbl, y_comm_lbl + 35)
-    garage_cost = find_calc_row_value(["garage", "carport"], y_supp_lbl, y_life_lbl)
-    tot_cost_new = find_calc_row_value(["total"], y_supp_lbl, y_life_lbl)
-    depr_val = find_calc_row_value(["depreciation"], y_supp_lbl, y_life_lbl + 10)
-    depr_imp = find_calc_row_value(["depreciated"], y_supp_lbl, y_life_lbl + 20)
-    asis_imp = find_calc_row_value(['"as-is"', "as-is"], y_supp_lbl, y_life_lbl + 25)
-    ind_cost = find_calc_row_value(["indicated"], y_life_lbl - 15, y_income_start + 15)
+        if anchor_y is None:
+            anchor_words = [
+                w for w in words
+                if any(k.lower() in w['text'].lower() for k in kw_list)
+                and 240.0 <= w['x0'] <= 480.0 and y_min <= w['top'] <= y_max
+            ]
+            if anchor_words:
+                anchor_y = anchor_words[0]['top']
+
+        if anchor_y is not None:
+            # 1. Primary: rightmost total amount (x0 >= 500.0) with tight y-tolerance (<= 4.5)
+            val_words_right = [
+                w['text'] for w in words
+                if abs(w['top'] - anchor_y) <= 4.5 and w['x0'] >= 500.0
+                and w['text'] not in ["$", "=", "(", ")", "=$", "=$(", "..", ".", "Sq.Ft.", "Sq.", "Ft.", "@"]
+            ]
+            res_right = clean_num(" ".join(val_words_right))
+            if res_right:
+                return res_right
+
+            # 2. Secondary: numbers placed around x0 >= 440.0 with tight y-tolerance (<= 4.5)
+            val_words = [
+                w['text'] for w in words
+                if abs(w['top'] - anchor_y) <= 4.5 and w['x0'] >= 440.0
+                and w['text'] not in ["$", "=", "(", ")", "=$", "=$(", "..", ".", "Sq.Ft.", "Sq.", "Ft.", "@"]
+            ]
+            res = clean_num(" ".join(val_words))
+            if res:
+                return res
+
+            # 3. Fallback: slightly wider y-tolerance (<= 5.5) strictly at x0 >= 500.0
+            val_words_wide = [
+                w['text'] for w in words
+                if abs(w['top'] - anchor_y) <= 5.5 and w['x0'] >= 500.0
+                and w['text'] not in ["$", "=", "(", ")", "=$", "=$(", "..", ".", "Sq.Ft.", "Sq.", "Ft.", "@"]
+            ]
+            res_wide = clean_num(" ".join(val_words_wide))
+            if res_wide:
+                return res_wide
+
+        if regex_pat:
+            m = re.search(regex_pat, txt, re.IGNORECASE)
+            if m:
+                return clean_num(m.group(1))
+        return ""
+
+    opinion_site = find_calc_row_value(
+        ["OPINION OF SITE VALUE", "OPINION", "SITE VALUE"],
+        y_cost_start, y_comm_lbl + 10.0,
+        regex_pat=r'OPINION\s+OF\s+SITE\s+VALUE[^\$\n]*=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    dwelling_cost = find_calc_row_value(
+        ["Dwelling", "DWELLING"],
+        y_cost_start, y_comm_lbl + 25.0,
+        regex_pat=r'Dwelling[^\n]*?=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    basement_cost = find_calc_row_value(
+        ["Basement", "Bsmt"],
+        y_cost_start, y_comm_lbl + 35.0,
+        regex_pat=r'(?:Basement|Bsmt)[^\n]*?=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    deck_cost = find_calc_row_value(
+        ["Deck", "Porch", "Patio"],
+        y_cost_start, y_comm_lbl + 45.0,
+        regex_pat=r'(?:Deck|Porch|Patio)[^\n]*?=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    garage_cost = find_calc_row_value(
+        ["Garage/Carport", "Garage", "Carport"],
+        y_cost_start, y_life_lbl + 10.0,
+        regex_pat=r'Garage\s*/?\s*Carport[^\n]*?=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    tot_cost_new = find_calc_row_value(
+        ["Total Estimate of Cost-New", "Total Estimate", "Cost-New"],
+        y_cost_start, y_life_lbl + 15.0,
+        regex_pat=r'Total\s+Estimate\s+of\s+Cost[\s\-]New[^\$\n]*=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    depr_val = find_calc_row_value(
+        ["Depreciation"],
+        y_cost_start, y_life_lbl + 25.0,
+        regex_pat=r'Depreciation[^\n]*?=\s*\$?\s*\(?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    depr_imp = find_calc_row_value(
+        ["Depreciated Cost of Improvements", "Depreciated Cost"],
+        y_cost_start, y_life_lbl + 35.0,
+        regex_pat=r'Depreciated\s+Cost\s+of\s+Improvements[^\$\n]*=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    asis_imp = find_calc_row_value(
+        ['"As-is" Value of Site Improvements', "As-is Value", "Site Improvements", "As-is"],
+        y_cost_start, y_life_lbl + 40.0,
+        regex_pat=r'["“\']?As[\-\s]is["”\']?\s+Value\s+of\s+Site\s+Improvements[^\$\n]*=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
+    ind_cost = find_calc_row_value(
+        ["INDICATED VALUE BY COST APPROACH", "Indicated Value By Cost Approach", "Indicated Value", "Cost Approach"],
+        y_life_lbl - 20.0, y_income_start + 25.0,
+        regex_pat=r'Indicated\s+Value\s+by\s+Cost\s+Approach[^\$\n]*=\s*\$?\s*([\d,]+(?:\.\d{2})?)'
+    )
 
     cost.update({
         "Provide adequate information for the lender/client to replicate the below cost figures and calculations.": "",
@@ -2824,6 +3226,11 @@ def extract_cost_approach_section(page_p3, full_doc_text="", fitz_page=None):
         "ESTIMATED COST NEW TYPE": est_choice,
         "Estimated": est_choice,
         "Estimated Cost New Type": est_choice,
+        "ESTIMATED/REPRODUCTION / REPLACEMENT COST NEW": est_choice,
+        "ESTIMATED / REPRODUCTION / REPLACEMENT COST NEW": est_choice,
+        "Cost Type": est_choice,
+        "Cost New Type": est_choice,
+        "Reproduction / Replacement": est_choice,
         "Source of cost data": src_val,
         "Source of Cost Data": src_val,
         "Quality rating from cost service ": qual_val,
@@ -2871,39 +3278,54 @@ def extract_income_approach_section(page_p3, full_doc_text="", fitz_page=None):
         return inc
 
     if fitz_page is not None:
-        words = fitz_page.get_text("words")
+        raw_words = fitz_page.get_text("words")
+        words = [{'x0': w[0], 'top': w[1], 'x1': w[2], 'bottom': w[3], 'text': w[4]} for w in raw_words]
         txt = fitz_page.get_text("text") or ""
     elif page_p3 is not None:
-        raw_w = page_p3.extract_words()
-        words = [(w['x0'], w['top'], w['x1'], w['bottom'], w['text']) for w in raw_w]
+        words = page_p3.extract_words() if hasattr(page_p3, 'extract_words') else []
         txt = page_p3.extract_text() or ""
     else:
         words = []
         txt = full_doc_text or ""
 
-    w_income_hdr = [w for w in words if "income" in w[4].lower() and "approach" in w[4].lower() and w[1] > 300 and w[0] < 250]
-    y_income_start = w_income_hdr[0][1] if w_income_hdr else 710.0
+    y_income_start = 300.0
+    if fitz_page is not None:
+        rects_inc = fitz_page.search_for("INCOME APPROACH") or fitz_page.search_for("INCOME APPROACH TO VALUE")
+        if rects_inc:
+            y_income_start = rects_inc[0].y0
+    if y_income_start == 300.0:
+        inc_words = [w for w in words if w['text'].lower() == "income" and 200.0 <= w['top'] <= 500.0 and w['x0'] < 250.0]
+        if inc_words:
+            y_income_start = inc_words[0]['top']
 
-    w_pud_hdr = [w for w in words if ("pud" in w[4].lower() or "project" in w[4].lower() or "information" in w[4].lower()) and w[1] > (y_income_start + 30) and w[0] < 250]
-    y_income_end = w_pud_hdr[0][1] if w_pud_hdr else (y_income_start + 180.0)
+    y_income_end = y_income_start + 180.0
+    if fitz_page is not None:
+        rects_pud = fitz_page.search_for("PROJECT INFORMATION") or fitz_page.search_for("PUD INFORMATION")
+        valid_pud = [r for r in rects_pud if r.y0 > y_income_start + 30.0 and r.x0 < 250.0]
+        if valid_pud:
+            y_income_end = valid_pud[0].y0
+    if y_income_end == y_income_start + 180.0:
+        pud_words = [w for w in words if ("pud" in w['text'].lower() or "project" in w['text'].lower() or "information" in w['text'].lower()) and w['top'] > (y_income_start + 30.0) and w['x0'] < 250.0]
+        if pud_words:
+            y_income_end = pud_words[0]['top']
 
     def clean_num(val_str):
         if not val_str: return ""
         m = re.findall(r'[\d,]+(?:\.\d{2})?', str(val_str))
         if not m: return ""
-        candidates = [c for c in m if len(c) > 0 and c not in ["1004", "70", "2005", "2006", "3", "6"]]
+        candidates = [c.replace(' ', '') for c in m if c and c not in ["1004", "70", "2005", "2006", "3", "6"]]
         return candidates[-1] if candidates else ""
 
-    w_inc_rent_lbl = [w for w in words if 'monthly' in w[4].lower() and y_income_start <= w[1] <= y_income_end and w[0] < 120]
-    y_inc_row = w_inc_rent_lbl[0][1] if w_inc_rent_lbl else y_income_start + 15.0
+    w_inc_rent_lbl = [w for w in words if 'monthly' in w['text'].lower() and y_income_start <= w['top'] <= y_income_end and w['x0'] < 120.0]
+    y_inc_row = w_inc_rent_lbl[0]['top'] if w_inc_rent_lbl else y_income_start + 15.0
     
-    rent_words = [w[4] for w in words if abs(w[1] - y_inc_row) <= 7.0 and 120 <= w[0] < 210 and w[4] not in ["$", "Estimated", "Monthly", "Market", "Rent", "X"]]
+    rent_words = [w['text'] for w in words if abs(w['top'] - y_inc_row) <= 7.0 and 120.0 <= w['x0'] < 210.0 and w['text'] not in ["$", "Estimated", "Monthly", "Market", "Rent", "X"]]
     rent_val = clean_num(" ".join(rent_words))
 
-    grm_words = [w[4] for w in words if abs(w[1] - y_inc_row) <= 7.0 and 210 <= w[0] < 315 and w[4] not in ["X", "Gross", "Rent", "Multiplier", "=", "$"]]
+    grm_words = [w['text'] for w in words if abs(w['top'] - y_inc_row) <= 7.0 and 210.0 <= w['x0'] < 315.0 and w['text'] not in ["X", "Gross", "Rent", "Multiplier", "=", "$"]]
     grm_val = clean_num(" ".join(grm_words))
 
-    ind_inc_words = [w[4] for w in words if abs(w[1] - y_inc_row) <= 7.0 and 315 <= w[0] <= 585 and w[4] not in ["=", "$", "Indicated", "Value", "by", "Income", "Approach"]]
+    ind_inc_words = [w['text'] for w in words if abs(w['top'] - y_inc_row) <= 7.0 and 315.0 <= w['x0'] <= 585.0 and w['text'] not in ["=", "$", "Indicated", "Value", "by", "Income", "Approach"]]
     ind_inc_val = clean_num(" ".join(ind_inc_words))
 
     # Safe Regex fallbacks restricted strictly to the Income Approach block
@@ -2928,25 +3350,25 @@ def extract_income_approach_section(page_p3, full_doc_text="", fitz_page=None):
         try:
             r_num = float(re.sub(r'[^\d.]', '', rent_val))
             g_num = float(re.sub(r'[^\d.]', '', grm_val))
+            # pyrefly: ignore [unnecessary-type-conversion]
             calc_ind = int(round(r_num * g_num))
             ind_inc_val = f"{calc_ind:,}"
         except Exception:
             pass
 
-    w_sum_lbl = [w for w in words if 'summary' in w[4].lower() and y_income_start <= w[1] <= y_income_end]
-    y_sum_start = w_sum_lbl[0][1] if w_sum_lbl else (y_inc_row + 10.0)
+    w_sum_lbl = [w for w in words if 'summary' in w['text'].lower() and y_income_start <= w['top'] <= y_income_end]
+    y_sum_start = w_sum_lbl[0]['top'] if w_sum_lbl else (y_inc_row + 10.0)
     
     # Collect words between summary label and PUD header, stopping before any PUD questions
     sum_words = []
     pud_stop_words = {"project", "information", "puds", "pud", "homeowners", "association", "hoa", "developer", "builder"}
     for w in words:
-        if (y_sum_start - 2.0 <= w[1] <= y_income_end - 2.5) and 26.5 <= w[0] <= 585:
-            # Skip form header label words near the label line
-            if abs(w[1] - y_sum_start) <= 4.0 and w[0] < 240:
+        if (y_sum_start - 2.0 <= w['top'] <= y_income_end - 2.5) and 25.0 <= w['x0'] <= 585.0:
+            if abs(w['top'] - y_sum_start) <= 4.0 and w['x0'] < 240.0:
                 continue
-            if w[4].lower() in pud_stop_words and w[1] > y_sum_start + 25.0:
+            if w['text'].lower() in pud_stop_words and w['top'] > y_sum_start + 25.0:
                 break
-            sum_words.append(w[4])
+            sum_words.append(w['text'])
 
     sum_inc_val = " ".join(sum_words).strip()
     sum_inc_val = re.sub(r'^(?:Summary\s+of\s+Income\s+Approach[^\)]*\)\.?\s*)', '', sum_inc_val, flags=re.IGNORECASE).strip()
@@ -3096,14 +3518,28 @@ def extract_certification_section(pdf_path, full_doc_text=""):
             lc_text = m_lc_block.group(0) if m_lc_block else ""
             
             m = re.search(r'Name\s*(.*?)(?=\nCompany Name|\nCompany Address|$)', lc_text, re.IGNORECASE)
-            cert["LENDER/CLIENT Name"] = clean_field(m.group(1), ["Name"]) if m else ""
+            lc_name = clean_field(m.group(1), ["Name"]) if m else ""
+            cert["LENDER/CLIENT Name"] = lc_name
+            cert["Lender/Client Name"] = lc_name
             
             m = re.search(r'Company Name\s*(.*?)(?=\nCompany Address|\nEmail|$)', lc_text, re.IGNORECASE)
-            cert["Lender/Client Company Name"] = clean_field(m.group(1), ["Company Name", "Name"]) if m else ""
+            lc_cname = clean_field(m.group(1), ["Company Name", "Name"]) if m else ""
+            cert["Lender/Client Company Name"] = lc_cname
+            cert["LENDER/CLIENT Company Name"] = lc_cname
+            cert["Client/Lender Company Name"] = lc_cname
             
-            m = re.search(r'Company Address\s*(.*?)(?=\nEmail|\nFreddie|$)', lc_text, re.DOTALL | re.IGNORECASE)
-            cert["Lender/Client Company Address"] = " ".join(clean_field(m.group(1), ["Company Address", "Address"]).split()) if m else ""
-
+            m = re.search(r'Company Address\s*(.*?)(?=\nEmail Address|\nEmail|\nMac|\nForm|\Z)', lc_text, re.DOTALL | re.IGNORECASE)
+            lc_addr = " ".join(clean_field(m.group(1), ["Company Address", "Address"]).split()) if m else ""
+            cert["Lender/Client Company Address"] = lc_addr
+            cert["LENDER/CLIENT Company Address"] = lc_addr
+            cert["Company Address (Lender/Client)"] = lc_addr
+            cert["Client/Lender Company Address"] = lc_addr
+            
+            m = re.search(r'Email Address\s*([\w\.-]+@[\w\.-]+)', lc_text, re.IGNORECASE)
+            lc_email = m.group(1) if m else ""
+            cert["Lender/Client Email Address"] = lc_email
+            cert["LENDER/CLIENT Email Address"] = lc_email
+            
     return cert
 
 
@@ -3119,16 +3555,34 @@ def extract_market_conditions_section(pdf_path, full_doc_text=""):
     if mc_page_idx is None:
         return {k: "" for k in MARKET_CONDITIONS_FIELDS}
         
+    fitz_page = doc[mc_page_idx]
+    drawings = fitz_page.get_drawings()
+
     with pdfplumber.open(pdf_path) as pdf:
         p = pdf.pages[mc_page_idx]
         words = p.extract_words()
         
-        stable_words = [w for w in words if w['text'] == 'Stable' and w['top'] < 310]
+        stable_words = [w for w in words if w['text'] == 'Stable' and w['top'] < 330]
         stable_words.sort(key=lambda w: w['top'])
         
         is_aci = len(stable_words) > 0 and stable_words[0]['x0'] < 490
 
         def check_mark(x0, y0, x1, y1):
+            # 1. Check vector drawings for checkmarks / cross lines
+            for d in drawings:
+                r = d['rect']
+                if r.x0 >= x0 - 4 and r.x1 <= x1 + 4 and r.y0 >= y0 - 4 and r.y1 <= y1 + 4:
+                    items = d.get('items', [])
+                    for it in items:
+                        if it[0] == 'l':
+                            p1, p2 = it[1], it[2]
+                            if abs(p1.x - p2.x) > 2.5 and abs(p1.y - p2.y) > 2.5:
+                                return True
+                        elif it[0] in ['c', 'qu']:
+                            return True
+                    if d.get('fill') is not None:
+                        return True
+            # 2. Check text words
             for w in words:
                 if w['x0'] >= x0 - 3 and w['x1'] <= x1 + 3 and w['top'] >= y0 - 3 and w['bottom'] <= y1 + 5:
                     if w['text'] in ["8", "X", "x", "☒", "☑", "✓", "[X]"]:
@@ -3137,13 +3591,13 @@ def extract_market_conditions_section(pdf_path, full_doc_text=""):
 
         def get_trend(y_row, is_inverted=False):
             if is_aci:
-                b_left = check_mark(390, y_row - 4, 435, y_row + 4)
-                b_center = check_mark(450, y_row - 4, 485, y_row + 4)
-                b_right = check_mark(510, y_row - 4, 550, y_row + 4)
+                b_left = check_mark(390, y_row - 6, 435, y_row + 6)
+                b_center = check_mark(450, y_row - 6, 485, y_row + 6)
+                b_right = check_mark(510, y_row - 6, 550, y_row + 6)
             else:
-                b_left = check_mark(435, y_row - 4, 475, y_row + 4)
-                b_center = check_mark(480, y_row - 4, 520, y_row + 4)
-                b_right = check_mark(530, y_row - 4, 570, y_row + 4)
+                b_left = check_mark(435, y_row - 6, 455, y_row + 6)
+                b_center = check_mark(485, y_row - 6, 505, y_row + 6)
+                b_right = check_mark(535, y_row - 6, 555, y_row + 6)
                 
             if b_left:
                 return "Declining" if is_inverted else "Increasing"
@@ -3154,83 +3608,94 @@ def extract_market_conditions_section(pdf_path, full_doc_text=""):
             return ""
 
         def get_cell(x0, x1, y_row):
-            matched = [w for w in words if w['x0'] >= x0 - 2 and w['x1'] <= x1 + 2 and (abs(w['top'] - y_row) <= 4.0 or abs((w['top'] + w['bottom'])/2 - (y_row + 3.5)) <= 4.0) and w['x0'] >= 26.5 and w['text'] not in ["8", "X", "x", "Increasing", "Stable", "Declining", "Prior", "7-12", "7–12", "4-6", "4–6", "Current", "Current-3", "3", "Months", "Overall", "Trend", "Total", "#", "of", "Comparable", "Sales", "(Settled)", "Absorption", "Rate", "(Total", "Sales/Months)", "Active", "Listings", "Supply", "Listings/Ab.Rate)", "Median", "Sale", "List", "Price,", "DOM,", "Sale/List", "%", "Price", "Days", "on", "Market", "as", "SISYLANA", "&", "prevalent?", "Yes", "No"]]
+            matched = [w for w in words if w['x0'] >= x0 - 2 and w['x1'] <= x1 + 2 and (abs(w['top'] - y_row) <= 4.5 or abs((w['top'] + w['bottom'])/2 - (y_row + 3.5)) <= 4.5) and w['x0'] >= 26.5 and w['text'] not in ["8", "X", "x", "Increasing", "Stable", "Declining", "Prior", "7-12", "7–12", "4-6", "4–6", "Current", "Current-3", "3", "Months", "Overall", "Trend", "Total", "#", "of", "Comparable", "Sales", "(Settled)", "Absorption", "Rate", "(Total", "Sales/Months)", "Active", "Listings", "Supply", "Listings/Ab.Rate)", "Median", "Sale", "List", "Price,", "DOM,", "Sale/List", "%", "Price", "Days", "on", "Market", "as", "SISYLANA", "&", "prevalent?", "Yes", "No"]]
             matched.sort(key=lambda w: (round(w['top'], -1), w['x0']))
             return " ".join(w['text'] for w in matched).strip()
 
-        y_r1 = stable_words[0]['top'] if len(stable_words) > 0 else 157.0
-        y_r2 = stable_words[1]['top'] if len(stable_words) > 1 else y_r1 + 12
-        y_r3 = stable_words[2]['top'] if len(stable_words) > 2 else y_r2 + 12
-        y_r4 = stable_words[3]['top'] if len(stable_words) > 3 else y_r3 + 12
-        y_r5 = stable_words[4]['top'] if len(stable_words) > 4 else y_r4 + 24
-        y_r6 = stable_words[5]['top'] if len(stable_words) > 5 else y_r5 + 12
-        y_r7 = stable_words[6]['top'] if len(stable_words) > 6 else y_r6 + 12
-        y_r8 = stable_words[7]['top'] if len(stable_words) > 7 else y_r7 + 12
-        y_r9 = stable_words[8]['top'] if len(stable_words) > 8 else y_r8 + 12
+        y_r1 = stable_words[0]['top'] if len(stable_words) > 0 else 190.4
+        y_r2 = stable_words[1]['top'] if len(stable_words) > 1 else y_r1 + 11.4
+        y_r3 = stable_words[2]['top'] if len(stable_words) > 2 else y_r2 + 11.4
+        y_r4 = stable_words[3]['top'] if len(stable_words) > 3 else y_r3 + 11.4
+        y_r5 = stable_words[4]['top'] if len(stable_words) > 4 else y_r4 + 22.8
+        y_r6 = stable_words[5]['top'] if len(stable_words) > 5 else y_r5 + 11.4
+        y_r7 = stable_words[6]['top'] if len(stable_words) > 6 else y_r6 + 11.4
+        y_r8 = stable_words[7]['top'] if len(stable_words) > 7 else y_r7 + 11.4
+        y_r9 = stable_words[8]['top'] if len(stable_words) > 8 else y_r8 + 11.4
         
         mc = {k: "" for k in MARKET_CONDITIONS_FIELDS}
         
-        
+        # Row 1
+        t1 = get_trend(y_r1, False)
         mc["Inventory Analysis Total # of Comparable Sales (Settled) (Prior 7-12 Months)"] = get_cell(195, 260, y_r1)
         mc["Inventory Analysis Total # of Comparable Sales (Settled) (Prior 4-6 Months)"] = get_cell(265, 335, y_r1)
         mc["Inventory Analysis Total # of Comparable Sales (Settled) (Current-3 Months)"] = get_cell(340, 410, y_r1)
-        mc["Inventory Analysis Total # of Comparable Sales (Settled) (Overall Trend)"] = get_trend(y_r1, False)
+        mc["Inventory Analysis Total # of Comparable Sales (Settled) (Overall Trend)"] = t1
+        mc["Total # of Comparable Sales (Settled) (Overall Trend)"] = t1
         
-        
+        # Row 2
+        t2 = get_trend(y_r2, False)
         mc["Inventory Analysis Absorption Rate (Total Sales/Months) (Prior 7-12 Months)"] = get_cell(195, 260, y_r2)
         mc["Inventory Analysis Absorption Rate (Total Sales/Months) (Prior 4-6 Months)"] = get_cell(265, 335, y_r2)
         mc["Inventory Analysis Absorption Rate (Total Sales/Months) (Current-3 Months)"] = get_cell(340, 410, y_r2)
-        mc["Inventory Analysis Absorption Rate (Total Sales/Months) (Overall Trend)"] = get_trend(y_r2, False)
+        mc["Inventory Analysis Absorption Rate (Total Sales/Months) (Overall Trend)"] = t2
+        mc["Absorption Rate (Total Sales/Months) (Overall Trend)"] = t2
         
-        
+        # Row 3 (Inverted: Left=Declining, Center=Stable, Right=Increasing)
+        t3 = get_trend(y_r3, True)
         mc["Inventory Analysis Total # of Comparable Active Listings (Prior 7-12 Months)"] = get_cell(195, 260, y_r3)
         mc["Inventory Analysis Total # of Comparable Active Listings (Prior 4-6 Months)"] = get_cell(265, 335, y_r3)
         mc["Inventory Analysis Total # of Comparable Active Listings (Current-3 Months)"] = get_cell(340, 410, y_r3)
-        mc["Inventory Analysis Total # of Comparable Active Listings (Overall Trend)"] = get_trend(y_r3, True)
+        mc["Inventory Analysis Total # of Comparable Active Listings (Overall Trend)"] = t3
+        mc["Total # of Comparable Active Listings (Overall Trend)"] = t3
         
-        
+        # Row 4 (Inverted: Left=Declining, Center=Stable, Right=Increasing)
+        t4 = get_trend(y_r4, True)
         mc["Inventory Analysis Months of Housing Supply (Total Listings/Ab.Rate) (Prior 7-12 Months)"] = get_cell(195, 260, y_r4)
         mc["Inventory Analysis Months of Housing Supply (Total Listings/Ab.Rate) (Prior 4-6 Months)"] = get_cell(265, 335, y_r4)
         mc["Inventory Analysis Months of Housing Supply (Total Listings/Ab.Rate) (Current-3 Months)"] = get_cell(340, 410, y_r4)
-        mc["Inventory Analysis Months of Housing Supply (Total Listings/Ab.Rate) (Overall Trend)"] = get_trend(y_r4, True)
+        mc["Inventory Analysis Months of Housing Supply (Total Listings/Ab.Rate) (Overall Trend)"] = t4
+        mc["Months of Housing Supply (Total Listings/Ab.Rate) (Overall Trend)"] = t4
         
-        
+        # Row 5
+        t5 = get_trend(y_r5, False)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sale Price (Prior 7-12 Months)"] = get_cell(195, 260, y_r5)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sale Price (Prior 4-6 Months)"] = get_cell(265, 335, y_r5)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sale Price (Current-3 Months)"] = get_cell(340, 410, y_r5)
-        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sale Price (Overall Trend)"] = get_trend(y_r5, False)
+        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sale Price (Overall Trend)"] = t5
+        mc["Median Comparable Sale Price (Overall Trend)"] = t5
         
-        
+        # Row 6 (Inverted: Left=Declining, Center=Stable, Right=Increasing)
+        t6 = get_trend(y_r6, True)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sales Days on Market (Prior 7-12 Months)"] = get_cell(195, 260, y_r6)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sales Days on Market (Prior 4-6 Months)"] = get_cell(265, 335, y_r6)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sales Days on Market (Current-3 Months)"] = get_cell(340, 410, y_r6)
-        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sales Days on Market (Overall Trend)"] = get_trend(y_r6, True)
+        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Sales Days on Market (Overall Trend)"] = t6
+        mc["Median Comparable Sales Days on Market (Overall Trend)"] = t6
         
-        
+        # Row 7
+        t7 = get_trend(y_r7, False)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable List Price (Prior 7-12 Months)"] = get_cell(195, 260, y_r7)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable List Price (Prior 4-6 Months)"] = get_cell(265, 335, y_r7)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable List Price (Current-3 Months)"] = get_cell(340, 410, y_r7)
-        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable List Price (Overall Trend)"] = get_trend(y_r7, False)
+        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable List Price (Overall Trend)"] = t7
+        mc["Median Comparable List Price (Overall Trend)"] = t7
         
-       
+        # Row 8 (Inverted: Left=Declining, Center=Stable, Right=Increasing)
+        t8 = get_trend(y_r8, True)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Listings Days on Market (Prior 7-12 Months)"] = get_cell(195, 260, y_r8)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Listings Days on Market (Prior 4-6 Months)"] = get_cell(265, 335, y_r8)
         mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Listings Days on Market (Current-3 Months)"] = get_cell(340, 410, y_r8)
-        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Listings Days on Market (Overall Trend)"] = get_trend(y_r8, True)
+        mc["Median Sale & List Price, DOM, Sale/List % Median Comparable Listings Days on Market (Overall Trend)"] = t8
+        mc["Median Comparable Listings Days on Market (Overall Trend)"] = t8
         
-        
+        # Row 9
+        t9 = get_trend(y_r9, False)
         mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Prior 7-12 Months)"] = get_cell(195, 260, y_r9)
         mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Prior 4-6 Months)"] = get_cell(265, 335, y_r9)
         mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Current-3 Months)"] = get_cell(340, 410, y_r9)
-        mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Overall Trend)"] = get_trend(y_r9, False)
+        mc["Median Sale & List Price, DOM, Sale/List % Median Sale Price as % of List Price (Overall Trend)"] = t9
+        mc["Median Sale Price as % of List Price (Overall Trend)"] = t9
         
-        def check_mark(x0, y0, x1, y1):
-            for w in words:
-                if w['x0'] >= x0 - 3 and w['x1'] <= x1 + 3 and w['top'] >= y0 - 3 and w['bottom'] <= y1 + 5:
-                    if w['text'] in ["8", "X", "x", "☒", "☑", "✓", "[X]"]:
-                        return True
-            return False
-
         def get_text_in_narr_box(y_start, y_end):
             matched = [
                 w for w in words
@@ -3299,6 +3764,9 @@ def extract_condo_section(pdf_path, full_doc_text=""):
     if mc_page_idx is None:
         return condo
         
+    fitz_page = doc[mc_page_idx]
+    drawings = fitz_page.get_drawings()
+
     with pdfplumber.open(pdf_path) as pdf:
         p = pdf.pages[mc_page_idx]
         words = p.extract_words()
@@ -3312,6 +3780,19 @@ def extract_condo_section(pdf_path, full_doc_text=""):
         is_aci = condo_stable[0]['x0'] < 490
 
         def check_mark(x0, y0, x1, y1):
+            for d in drawings:
+                r = d['rect']
+                if r.x0 >= x0 - 4 and r.x1 <= x1 + 4 and r.y0 >= y0 - 4 and r.y1 <= y1 + 4:
+                    items = d.get('items', [])
+                    for it in items:
+                        if it[0] == 'l':
+                            p1, p2 = it[1], it[2]
+                            if abs(p1.x - p2.x) > 2.5 and abs(p1.y - p2.y) > 2.5:
+                                return True
+                        elif it[0] in ['c', 'qu']:
+                            return True
+                    if d.get('fill') is not None:
+                        return True
             for w in words:
                 if w['x0'] >= x0 - 3 and w['x1'] <= x1 + 3 and w['top'] >= y0 - 3 and w['bottom'] <= y1 + 5:
                     if w['text'] in ["8", "X", "x", "☒", "☑", "✓", "[X]"]:
@@ -4238,6 +4719,14 @@ def clean_appraisal_extracted_data(data):
             else:
                 cntr[did_key] = re.sub(r'(?:performed[\.\:]*)$', '', did_val, flags=re.IGNORECASE).strip()
 
+        # Clean & Sync "If Yes, report the total dollar amount and describe the items to be paid"
+        ifyes_val = cntr.get("If Yes, report the total dollar amount and describe the items to be paid") or cntr.get("If Yes, report the total dollar amount and describe the items to be paid.") or ""
+        if ifyes_val:
+            ifyes_clean = re.sub(r'^(?:If\s+Yes,?\s*report\s+the\s+total\s+dollar\s+amount\s+and\s+describe\s+the\s+items\s+to\s+be\s+paid[\.\:]*\s*)', '', str(ifyes_val), flags=re.IGNORECASE).strip()
+            ifyes_clean = re.sub(r'(?:Note\s*:\s*Race\s+and\s+the\s+racial\s+composition.*|are\s+not\s+appraisal\s+factors.*)', '', ifyes_clean, flags=re.IGNORECASE).strip()
+            cntr["If Yes, report the total dollar amount and describe the items to be paid"] = ifyes_clean
+            cntr["If Yes, report the total dollar amount and describe the items to be paid."] = ifyes_clean
+
     # 3. Clean NEIGHBORHOOD section
     neigh = data.get("NEIGHBORHOOD")
     if isinstance(neigh, dict):
@@ -4283,33 +4772,19 @@ def clean_appraisal_extracted_data(data):
         stories = str(imp.get("# of Stories", "")).strip()
         if "One with Accessory" in stories or "Accessory" in stories or "Unit" in stories:
             m_num = re.search(r'\b(\d+(?:\.\d+)?)\b', stories)
-            imp["# of Stories"] = m_num.group(1) if m_num else "2"
+            if m_num:
+                imp["# of Stories"] = m_num.group(1)
 
         # Design (Style) clean
         style = str(imp.get("Design (Style)", "")).strip()
         if "Proposed" in style or "Under Const" in style or "Existing" in style:
             cleaned_style = re.sub(r'(?:Existing|Proposed|Under\s*Const\.?|Under|Const)', '', style, flags=re.IGNORECASE).strip(" ,.-")
-            imp["Design (Style)"] = cleaned_style or "ROW"
+            if cleaned_style:
+                imp["Design (Style)"] = cleaned_style
 
         # Finished area above grade Bath(s) clean
         baths = str(imp.get("Finished area above grade Bath(s)", "")).strip()
         imp["Finished area above grade Bath(s)"] = re.sub(r'(?:\s*Bath\(?s?\)?.*)$', '', baths, flags=re.IGNORECASE).strip()
-
-        # Foundation Type clean
-        fnd = str(imp.get("Foundation Type", "")).strip()
-        if "Full Basement" in fnd and "Partial Basement" in fnd:
-            imp["Foundation Type"] = "Partial Basement"
-
-        # Basement Area & Finish %
-        ba = str(imp.get("Basement Area sq.ft.", "")).strip()
-        bf = str(imp.get("Basement Finish %", "")).strip()
-        if ba.lower() == "partial" or not ba.isdigit():
-            if bf.isdigit():
-                imp["Basement Area sq.ft."] = bf
-                imp["Basement Finish %"] = "0"
-            else:
-                imp["Basement Area sq.ft."] = "275"
-                imp["Basement Finish %"] = "0"
 
     # 4. Clean SALES_GRID section
     grid = data.get("SALES_GRID")
@@ -4362,6 +4837,22 @@ def clean_appraisal_extracted_data(data):
                     if comp_clean.get(noise_field) and comp_clean[noise_field] in ["PA 19082", "RECORDS", "34", "53", "10", "11", "102", "23"]:
                         comp_clean[noise_field] = ""
 
+                # Room count normalization
+                tot = str(comp_clean.get("Total Rooms") or "").strip()
+                beds = str(comp_clean.get("Bedrooms") or "").strip()
+                baths_c = str(comp_clean.get("Baths") or "").strip()
+                ag_rc = str(comp_clean.get("Above Grade Room Count") or "").strip()
+
+                if tot and beds and baths_c:
+                    comp_clean["Above Grade Room Count"] = f"{tot} {beds} {baths_c}".strip()
+                elif ag_rc:
+                    parts = [p for p in ag_rc.split() if p.strip()]
+                    if len(parts) >= 3:
+                        if not tot: comp_clean["Total Rooms"] = parts[0]
+                        if not beds: comp_clean["Bedrooms"] = parts[1]
+                        if not baths_c: comp_clean["Baths"] = parts[2]
+                        comp_clean["Above Grade Room Count"] = f"{parts[0]} {parts[1]} {parts[2]}"
+
                 # Standardize and add key aliases for UI compatibility
                 adj_sp = comp_clean.get("Adjusted Sale Price of Comparables") or comp_clean.get("Adjusted Sale Price of Comparable") or comp_clean.get("Adjusted Sale Price") or ""
                 if adj_sp:
@@ -4412,6 +4903,7 @@ def clean_appraisal_extracted_data(data):
     # 5. Clean and Sync SALES_TRANSFER and RECONCILIATION
     st = data.get("SALES_TRANSFER")
     rec = data.get("RECONCILIATION")
+    cost = data.get("COST_APPROACH")
     if isinstance(st, dict):
         ind_v = st.get("Indicated Value by Sales Comparison Approach $") or st.get("Indicated Value by Sales Comparison Approach") or ""
         if not ind_v and isinstance(rec, dict):
@@ -4441,6 +4933,23 @@ def clean_appraisal_extracted_data(data):
                 elif "did" in val:
                     st[k] = "did"
 
+    if isinstance(rec, dict):
+        # Clean & Sync Cost Approach in Reconciliation
+        cost_val = rec.get("Cost Approach (if developed)") or rec.get("Cost Approach (if developed) $") or rec.get("Cost Approach") or (cost.get("Indicated Value by Cost Approach") if isinstance(cost, dict) else "") or ""
+        if cost_val:
+            cost_val_clean = re.sub(r'[^\d,.]', '', str(cost_val)).strip()
+            if cost_val_clean:
+                rec["Cost Approach (if developed)"] = cost_val_clean
+                rec["Cost Approach (if developed) $"] = cost_val_clean
+                rec["Cost Approach"] = cost_val_clean
+
+        # Clean & Sync Income Approach in Reconciliation
+        inc_val = rec.get("Income Approach (if developed) $") or rec.get("Income Approach (if developed)") or ""
+        if inc_val:
+            inc_val_clean = re.sub(r'[^\d,.]', '', str(inc_val)).strip()
+            rec["Income Approach (if developed) $"] = inc_val_clean
+            rec["Income Approach (if developed)"] = inc_val_clean
+
     # 6. Clean COST_APPROACH section
     cost = data.get("COST_APPROACH")
     if isinstance(cost, dict):
@@ -4466,7 +4975,9 @@ def clean_appraisal_extracted_data(data):
             "Indicated Value by Cost Approach", "INDICATED VALUE BY COST APPROACH"
         ]:
             if cost.get(num_k):
-                clean_v = re.sub(r'[\$a-zA-Z\(\)\=\.\s]', '', str(cost[num_k])).strip()
+                raw_c = str(cost[num_k]).strip()
+                clean_v = re.sub(r'^[=\$\s]+', '', raw_c).strip()
+                clean_v = re.sub(r'[^\d,.]', '', clean_v).strip()
                 if clean_v:
                     cost[num_k] = clean_v
 
@@ -4475,19 +4986,19 @@ def clean_appraisal_extracted_data(data):
     if isinstance(inc, dict):
         for rent_k in ["Estimated Monthly Market Rent $", "Estimated Monthly Market Rent", "ESTIMATED MONTHLY MARKET RENT $"]:
             if inc.get(rent_k):
-                clean_r = re.sub(r'[\$a-zA-Z\(\)\=\.\s]', '', str(inc[rent_k])).strip()
+                clean_r = re.sub(r'[^\d,.]', '', str(inc[rent_k])).strip()
                 if clean_r:
                     inc[rent_k] = clean_r
 
         for grm_k in ["X Gross Rent Multiplier  = $", "X Gross Rent Multiplier = $", "X GROSS RENT MULTIPLIER = $", "X GROSS RENT MULTIPLIER  = $", "Gross Rent Multiplier"]:
             if inc.get(grm_k):
-                clean_g = re.sub(r'[\$a-zA-Z\(\)\=\s]', '', str(inc[grm_k])).strip()
+                clean_g = re.sub(r'[^\d,.]', '', str(inc[grm_k])).strip()
                 if clean_g:
                     inc[grm_k] = clean_g
 
         for ind_inc_k in ["Indicated Value by Income Approach", "INDICATED VALUE BY INCOME APPROACH", "Indicated Value by Income Approach $"]:
             if inc.get(ind_inc_k):
-                clean_ind = re.sub(r'[\$a-zA-Z\(\)\=\.\s]', '', str(inc[ind_inc_k])).strip()
+                clean_ind = re.sub(r'[^\d,.]', '', str(inc[ind_inc_k])).strip()
                 if clean_ind:
                     inc[ind_inc_k] = clean_ind
 
@@ -4496,6 +5007,39 @@ def clean_appraisal_extracted_data(data):
                 s_val = str(inc[sum_k]).strip()
                 if s_val.lower() in ["m e and grm)", "e and grm)", "and grm)", "m e", "e", "n/a", "none", "na"]:
                     inc[sum_k] = ""
+
+    # 8. Clean SITE section
+    site = data.get("SITE")
+    if isinstance(site, dict):
+        if site.get("FEMA Map Date"):
+            m_dt = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4})', str(site["FEMA Map Date"]))
+            if m_dt:
+                site["FEMA Map Date"] = m_dt.group(1)
+            elif site["FEMA Map Date"] in ["2", "0", "None", "N/A"]:
+                site["FEMA Map Date"] = ""
+        if site.get("FEMA Map #"):
+            site["FEMA Map #"] = re.sub(r'^(?:#\s*|Map\s*#?\s*)', '', str(site["FEMA Map #"])).strip()
+        if site.get("FEMA Flood Zone"):
+            site["FEMA Flood Zone"] = re.sub(r'^(?:Zone\s*|Flood\s*Zone\s*)', '', str(site["FEMA Flood Zone"])).strip().upper()
+        if site.get("Zoning Compliance"):
+            zc = str(site["Zoning Compliance"]).strip()
+            if "legal" in zc.lower() and "nonconforming" not in zc.lower() and "illegal" not in zc.lower():
+                site["Zoning Compliance"] = "Legal"
+
+    # 9. Clean & Sync ANSI across data and SUBJECT
+    ansi_val = data.get("ANSI") or (data.get("SUBJECT", {}).get("ANSI") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("Subject", {}).get("ANSI") if isinstance(data.get("Subject"), dict) else "") or ""
+    if ansi_val:
+        data["ANSI"] = ansi_val
+        data["ANSI Standards"] = ansi_val
+        data["ANSI Comment"] = ansi_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["ANSI"] = ansi_val
+            data["SUBJECT"]["ANSI Standards"] = ansi_val
+            data["SUBJECT"]["ANSI Comment"] = ansi_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["ANSI"] = ansi_val
+            data["Subject"]["ANSI Standards"] = ansi_val
+            data["Subject"]["ANSI Comment"] = ansi_val
 
     return data
 
@@ -4538,8 +5082,9 @@ def detect_form_pages(doc) -> Dict[str, Any]:
 
         # Form 1004 Page 3: Cost Approach, Income Approach, PUD Information
         if indices["form_p3"] is None and (
-            ("COST APPROACH TO VALUE" in txt or "COST APPROACH" in txt)
-            and ("INCOME APPROACH TO VALUE" in txt or "INCOME APPROACH" in txt or "PUD INFORMATION" in txt)
+            (("COST APPROACH" in txt or "COST" in txt) and ("INCOME APPROACH" in txt or "INCOME" in txt or "PUD INFORMATION" in txt or "PROJECT INFORMATION" in txt))
+            or ("OPINION OF SITE VALUE" in txt and ("ECONOMIC LIFE" in txt or "REPLACEMENT" in txt or "REPRODUCTION" in txt))
+            or ("COST APPROACH" in txt and ("OPINION OF SITE VALUE" in txt or "INDICATED VALUE BY COST APPROACH" in txt))
         ):
             indices["form_p3"] = idx
             continue
@@ -4572,7 +5117,12 @@ def detect_form_pages(doc) -> Dict[str, Any]:
     if indices["form_p2"] is None:
         indices["form_p2"] = 1 if len(doc) > 1 else 0
     if indices["form_p3"] is None:
-        indices["form_p3"] = 2 if len(doc) > 2 else None
+        if indices["form_p2"] is not None and (indices["form_p2"] + 1) < len(doc):
+            indices["form_p3"] = indices["form_p2"] + 1
+        elif len(doc) > 2:
+            indices["form_p3"] = 2
+        else:
+            indices["form_p3"] = None
 
     return indices
 
@@ -4616,9 +5166,10 @@ def extract_fields_from_pdf_offline(pdf_path):
             fitz_p1 = doc[p1_idx] if (doc and p1_idx < len(doc)) else None
             fitz_p2 = doc[p2_idx] if (doc and p2_idx < len(doc)) else None
             fitz_p3 = doc[p3_idx] if (doc and p3_idx is not None and p3_idx < len(doc)) else None
+            fitz_extra_pages = [doc[i] for i in extra_indices if doc and i < len(doc)]
             data: Dict[str, Any] = extract_page_1_fields(p1, full_doc_text, fitz_page=fitz_p1)
 
-            sales_grid, recon = extract_page_2_sales_grid_and_reconciliation(p2, extra_pdf_pages, fitz_page=fitz_p2)
+            sales_grid, recon = extract_page_2_sales_grid_and_reconciliation(p2, extra_pdf_pages, fitz_page=fitz_p2, fitz_extra_pages=fitz_extra_pages)
             if data.get("SUBJECT"):
                 full_a = data["SUBJECT"].get("Full Address")
                 prop_a = data["SUBJECT"].get("Property Address")
@@ -4676,6 +5227,17 @@ def extract_fields_from_pdf_offline(pdf_path):
                             if not existing or not existing.get("Address") or not existing.get("Sale Price"):
                                 merged_comp = {**comp_info, **existing}
                                 data["SALES_GRID"][comp_grid_key] = merged_comp
+
+            # Extract ANSI sentence from across the entire document
+            ansi_doc_sentence = extract_ansi_sentence_from_doc(doc=doc, full_doc_text=full_doc_text)
+            if ansi_doc_sentence:
+                data["ANSI"] = ansi_doc_sentence
+                data["ANSI Standards"] = ansi_doc_sentence
+                data["ANSI Comment"] = ansi_doc_sentence
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["ANSI"] = ansi_doc_sentence
+                    data["SUBJECT"]["ANSI Standards"] = ansi_doc_sentence
+                    data["SUBJECT"]["ANSI Comment"] = ansi_doc_sentence
 
             # Apply Master Sanitization & Clean-up FIRST so signed values and numbers are pristine
             clean_data = clean_appraisal_extracted_data(data)

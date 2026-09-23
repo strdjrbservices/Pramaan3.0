@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.sessions",
     "django.contrib.messages",
-    "rest_framework", # for DRF
+    "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
     "api",

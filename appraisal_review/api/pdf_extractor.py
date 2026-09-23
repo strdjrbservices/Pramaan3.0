@@ -89,6 +89,7 @@ CONTRACT_FIELDS = [
     'Contract Price $', 'Date of Contract', 'Is property seller owner of public record?', 'Data Source(s)',
     'Is there any financial assistance (loan charges, sale concessions, gift or downpayment assistance, etc.) to be paid by any party on behalf of the borrower?',
     'If Yes, report the total dollar amount and describe the items to be paid',
+    'If Yes, report the total dollar amount and describe the items to be paid.',
 ]
 NEIGHBORHOOD_FIELDS = [
     "Location", "Built-Up", "Growth", "Property Values", "Demand/Supply",
@@ -325,6 +326,7 @@ SalesGridFIELDS2 = [
         "Data Source(s)",
         "Verification Source(s)",
         "Sales or Financing Concessions",
+        "Sales or Financing Concessions Adjustment",
         "Date of Sale/Time",
         "Date of Sale/Time Adjustment",
         "Location",
