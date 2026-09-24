@@ -87,7 +87,7 @@ def evaluate_state_requirements(pdf_path: str, extracted_data: Optional[Dict[str
     is_fee_state = subject_state in fee_states
 
     appraiser_fee_val = None
-    fee_obj = _get_field_val(data, "Certification", "Appraiser's Fee")
+    fee_obj = _get_field_val(data, "Certification", "Appraiser's Fee") or _get_field_val(data, "Subject", "Appraiser's Fee") or data.get("Appraiser's Fee") or data.get("Appraiser Fee") or data.get("Appraisal Fee")
     if isinstance(fee_obj, dict) and fee_obj.get("value"):
         appraiser_fee_val = fee_obj.get("value")
     elif isinstance(fee_obj, str) and fee_obj:
@@ -96,8 +96,10 @@ def evaluate_state_requirements(pdf_path: str, extracted_data: Optional[Dict[str
     fee_page, fee_snippet = _find_keyword_in_pages(
         pages_text,
         [
-            r"(?:Appraiser(?:'s)?\s*Fee|Appraisal\s*Fee|Invoice\s*Amount)[:\s]*\$?\s*([0-9,]+(?:\.\d{2})?)",
-            r"(?:Total\s*Fee|Agreed\s*Fee)[:\s]*\$?\s*([0-9,]+(?:\.\d{2})?)",
+            r"(?:Appraiser(?:'s)?\s*Fee|Appraisal\s*Fee|Appraiser\s*Fee)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?",
+            r"(?:Total\s*Fee|Agreed\s*Fee|Professional\s*Fee|Fee\s*Charged|Fee\s*Amount)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?",
+            r"(?:Invoice\s*Amount|Invoice\s*Total|Total\s*Amount\s*Due|Amount\s*Due)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?",
+            r"\bFee\b[^0-9\$\n]{0,25}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?",
             r"Invoice",
         ]
     )
@@ -120,19 +122,22 @@ def evaluate_state_requirements(pdf_path: str, extracted_data: Optional[Dict[str
     # 2. AMC License # Inclusion (GA, IL, MT, NJ, OH, VT)
     amc_lic_states = {"GA", "IL", "MT", "NJ", "OH", "VT"}
     is_amc_lic_state = subject_state in amc_lic_states
+    amc_lic_val = _get_field_val(data, "Subject", "AMC License #") or _get_field_val(data, "Certification", "AMC License #") or data.get("AMC License #")
     amc_lic_page, amc_lic_snip = _find_keyword_in_pages(
         pages_text,
         [
-            r"AMC\s*(?:License|Registration|Reg|#)[:\s]*([A-Z0-9\-]+)",
-            r"558000312",
+            r"(?:Registration\s+No\.?|Registration\s+#|AMC\s+License\s*#?|AMC\s+Reg\s*#?)\s*[:\-]?\s*([A-Za-z0-9\.\-]+)",
+            r"AMC\s*(?:License|Registration|Reg|#)[:\s]*([A-Z0-9\.\-]+)",
+            r"558\.?000312",
         ]
     )
-    if amc_lic_page:
-        amc_lic_snip_str = (amc_lic_snip or "")[:60]
+    if amc_lic_val or amc_lic_page:
+        amc_lic_snip_str = str(amc_lic_val or amc_lic_snip or "")[:60]
+        p_no = amc_lic_page or 1
         details.append({
             "requirement": "AMC License # Inclusion",
             "status": "Fulfilled",
-            "value_or_comment": f"AMC License number present on Page {amc_lic_page} ({amc_lic_snip_str})."
+            "value_or_comment": f"AMC License/Registration number present on Page {p_no} ({amc_lic_snip_str})."
         })
     else:
         details.append({
@@ -167,15 +172,27 @@ def evaluate_state_requirements(pdf_path: str, extracted_data: Optional[Dict[str
     # 4. California (CA) Specific Checks
     if subject_state == "CA":
         # Smoke/CO Detectors
+        smoke_comm = _get_field_val(data, "Subject", "Smoke detector comment") or data.get("Smoke detector comment") or ""
+        co_comm = _get_field_val(data, "Subject", "CO detector comment") or data.get("CO detector comment") or ""
+
         co_page, co_snip = _find_keyword_in_pages(
             pages_text,
-            [r"smoke\s*(?:and|/|&)?\s*carbon\s*monoxide", r"smoke\s*(?:and|/|&)?\s*co\s*detector", r"smoke\s*detector", r"carbon\s*monoxide\s*detector"]
+            [
+                r"smoke\s*(?:and|/|&|\+|,)?\s*(?:carbon\s*monoxide|co|carbon)",
+                r"(?:carbon\s*monoxide|co|carbon)\s*(?:and|/|&|\+|,)?\s*smoke",
+                r"smoke\s*detector",
+                r"carbon\s*monoxide\s*detector",
+                r"co\s*detector",
+                r"smoke\s*alarm",
+                r"co\s*alarm"
+            ]
         )
-        if co_page:
+        if smoke_comm or co_comm or co_page:
+            disp_comm = smoke_comm or co_comm or (f"Smoke/CO detector commentary verified on Page {co_page} ({co_snip[:60]}...)" if co_snip else f"Smoke/CO detector commentary verified on Page {co_page}")
             details.append({
                 "requirement": "California (CA) Smoke/CO Detectors Commentary",
                 "status": "Fulfilled",
-                "value_or_comment": f"Smoke and CO detector commentary verified on Page {co_page}."
+                "value_or_comment": str(disp_comm)
             })
         else:
             details.append({
@@ -205,17 +222,17 @@ def evaluate_state_requirements(pdf_path: str, extracted_data: Optional[Dict[str
 
     # 5. Illinois (IL) Specific Checks
     if subject_state == "IL":
-        il_lic_page, _ = _find_keyword_in_pages(pages_text, [r"558000312.*(?:12/31/2026|Exp)", r"558000312"])
+        il_lic_page, _ = _find_keyword_in_pages(pages_text, [r"558\.?000312.*(?:12/31/2026|Exp)", r"558\.?000312", r"558000312"])
         details.append({
             "requirement": "Illinois (IL) AMC License #558000312 & Expiration",
             "status": "Fulfilled" if il_lic_page else "Not Fulfilled",
-            "value_or_comment": f"AMC License 558000312 verified on Page {il_lic_page}" if il_lic_page else "Illinois AMC License #558000312 with expiration 12/31/2026 missing."
+            "value_or_comment": f"AMC License 558.000312 verified on Page {il_lic_page}" if il_lic_page else "Illinois AMC License #558000312 with expiration 12/31/2026 missing."
         })
-        il_code_page, _ = _find_keyword_in_pages(pages_text, [r"Illinois\s*Administrative\s*Code\s*1455\.245", r"1455\.245"])
+        il_code_page, _ = _find_keyword_in_pages(pages_text, [r"Illinois\s*Administrative\s*(?:Code|Rule)\s*(?:Section\s*)?1455\.(?:245|250)", r"1455\.(?:245|250)"])
         details.append({
-            "requirement": "Illinois (IL) Admin Code 1455.245 Statement",
+            "requirement": "Illinois (IL) Admin Code 1455.245/250 Statement",
             "status": "Fulfilled" if il_code_page else "Not Fulfilled",
-            "value_or_comment": f"Admin Code 1455.245 statement found on Page {il_code_page}" if il_code_page else "Illinois Administrative Code 1455.245 statement missing in addendum."
+            "value_or_comment": f"Admin Code 1455 statement found on Page {il_code_page}" if il_code_page else "Illinois Administrative Code 1455.245/250 statement missing in addendum."
         })
 
     # 6. Utah (UT) Specific Checks

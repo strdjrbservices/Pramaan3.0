@@ -271,6 +271,7 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
       if (o === 'driveway' && (tClean.includes('driveway') || tClean === 'driveway')) return true;
       if (o === 'garage' && (tClean.includes('garage') || tClean === 'garage')) return true;
       if (o === 'carport' && (tClean.includes('carport') || tClean === 'carport')) return true;
+      if (o.includes('other') && tClean.includes('other')) return true;
     }
     return false;
   };
@@ -375,7 +376,7 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
         )}
         <div className="card-body p-2" style={{ fontSize: '0.78rem', backgroundColor: '#fff', overflowX: 'auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: '8px', border: '1px solid #ced4da', borderRadius: '4px', padding: '4px' }}>
-            
+
             {/* COLUMN 1: GENERAL DESCRIPTION */}
             <div style={{ border: '1px solid #dee2e6', borderRadius: '4px', overflow: 'hidden' }}>
               <div style={{ backgroundColor: '#e9ecef', padding: '4px 8px', fontWeight: 'bold', fontSize: '0.75rem', textAlign: 'center', borderBottom: '1px solid #dee2e6' }}>
@@ -390,7 +391,7 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
                 {renderImpField("Year Built", ["Year Built"])}
                 {renderImpField("Effective Age (Yrs)", ["Effective Age (Yrs)", "Effective Age"])}
                 {renderImpField("Attic", ["Attic"], ["None", "Drop Stair", "Stairs", "Floor", "Scuttle", "Finished", "Heated"])}
-                {renderImpField("Appliances", ["Appliances"], ["Refrigerator", "Range/Oven", "Dishwasher", "Disposal", "Microwave", "Washer/Dryer"])}
+                {renderImpField("Appliances", ["Appliances"], ["Refrigerator", "Range/Oven", "Dishwasher", "Disposal", "Microwave", "Washer/Dryer", "Other (describe)"])}
               </div>
             </div>
 
@@ -439,12 +440,369 @@ export const GridInfoCard = ({ id, title, fields, data, cardClass = 'bg-secondar
                 {renderImpField("Trim/Finish", ["Trim/Finish (Material/Condition)", "Trim/Finish"])}
                 {renderImpField("Bath Floor", ["Bath Floor (Material/Condition)", "Bath Floor"])}
                 {renderImpField("Bath Wainscot", ["Bath Wainscot (Material/Condition)", "Bath Wainscot"])}
-                {renderImpField("Car Storage", ["Car Storage"], ["None", "Driveway", "Garage", "Carport", "Att.", "Det.", "Built-in"])}
-                {renderImpField("# of Cars", ["Driveway # of Cars", "# of Cars"])}
-                {renderImpField("Driveway Surface", ["Driveway Surface"])}
+
+                {/* CAR STORAGE STRUCTURED SECTION */}
+                <div style={{ marginTop: '8px', border: '1px solid #dee2e6', borderRadius: '4px', overflow: 'hidden', backgroundColor: '#fcfcfc' }}>
+                  {/* Row 1: Header + None */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#f1f3f5', padding: '3px 6px', borderBottom: '1px solid #dee2e6' }}>
+                    <span style={{ fontWeight: 'bold', color: '#495057', fontSize: '0.72rem' }}>Car Storage</span>
+                    {(() => {
+                      const { value: csVal } = getImpValue(["Car Storage"]);
+                      const isNoneChecked = checkOptionMatches(csVal, "None");
+                      const toggleNone = () => {
+                        let items = csVal ? String(csVal).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (isNoneChecked) {
+                          items = items.filter(i => !checkOptionMatches(i, "None"));
+                        } else {
+                          items = ["None"];
+                        }
+                        onDataChange(getFieldPath("Car Storage"), items.join(', '));
+                      };
+                      return (
+                        <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0, fontWeight: '500' }}>
+                          <input type="checkbox" checked={isNoneChecked} onChange={toggleNone} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                          <span>None</span>
+                        </label>
+                      );
+                    })()}
+                  </div>
+
+                  <div style={{ padding: '4px 6px' }}>
+                    {/* Row 2: [ ] Driveway   # of Cars [ 1 ] */}
+                    {(() => {
+                      const { value: csVal } = getImpValue(["Car Storage"]);
+                      const isDriveChecked = checkOptionMatches(csVal, "Driveway");
+                      const toggleDrive = () => {
+                        let items = csVal ? String(csVal).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (isDriveChecked) {
+                          items = items.filter(i => !checkOptionMatches(i, "Driveway"));
+                        } else {
+                          items = items.filter(i => !checkOptionMatches(i, "None"));
+                          items.push("Driveway");
+                        }
+                        onDataChange(getFieldPath("Car Storage"), items.join(', '));
+                      };
+                      const { value: driveCarsVal, actualKey: driveCarsKey } = getImpValue(["Driveway # of Cars", "Driveway Cars", "# of Cars"]);
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: '1px dashed #e9ecef' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0, minWidth: '75px' }}>
+                            <input type="checkbox" checked={isDriveChecked} onChange={toggleDrive} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Driveway</span>
+                          </label>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.68rem', color: '#6c757d', whiteSpace: 'nowrap' }}># of Cars</span>
+                            <div style={{ width: '65px', borderBottom: '1px solid #495057' }}>
+                              <EditableField
+                                fieldPath={getFieldPath(driveCarsKey || "Driveway # of Cars")}
+                                value={renderValue(driveCarsVal)}
+                                onDataChange={onDataChange}
+                                editingField={editingField}
+                                setEditingField={setEditingField}
+                                isEditable={true}
+                                allData={allData}
+                                manualValidations={manualValidations}
+                                handleManualValidation={handleManualValidation}
+                                revisionHandlers={revisionHandlers}
+                                inputClassName="form-control form-control-sm text-center"
+                                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 2px', fontSize: '0.75rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Row 3: Driveway Surface [ Asphalt ] */}
+                    {(() => {
+                      const { value: surfVal, actualKey: surfKey } = getImpValue(["Driveway Surface"]);
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: '1px dashed #e9ecef' }}>
+                          <span style={{ fontSize: '0.7rem', color: '#495057' }}>Driveway Surface</span>
+                          <div style={{ width: '95px', borderBottom: '1px solid #495057' }}>
+                            <EditableField
+                              fieldPath={getFieldPath(surfKey || "Driveway Surface")}
+                              value={renderValue(surfVal)}
+                              onDataChange={onDataChange}
+                              editingField={editingField}
+                              setEditingField={setEditingField}
+                              isEditable={true}
+                              allData={allData}
+                              manualValidations={manualValidations}
+                              handleManualValidation={handleManualValidation}
+                              revisionHandlers={revisionHandlers}
+                              inputClassName="form-control form-control-sm text-center"
+                              inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 2px', fontSize: '0.75rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Row 4: [ ] Garage   # of Cars [ 1 ] */}
+                    {(() => {
+                      const { value: csVal } = getImpValue(["Car Storage"]);
+                      const isGarageChecked = checkOptionMatches(csVal, "Garage");
+                      const toggleGarage = () => {
+                        let items = csVal ? String(csVal).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (isGarageChecked) {
+                          items = items.filter(i => !checkOptionMatches(i, "Garage"));
+                        } else {
+                          items = items.filter(i => !checkOptionMatches(i, "None"));
+                          items.push("Garage");
+                        }
+                        onDataChange(getFieldPath("Car Storage"), items.join(', '));
+                      };
+                      const { value: garageCarsVal, actualKey: garageCarsKey } = getImpValue(["Garage # of Cars", "Garage Cars"]);
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: '1px dashed #e9ecef' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0, minWidth: '75px' }}>
+                            <input type="checkbox" checked={isGarageChecked} onChange={toggleGarage} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Garage</span>
+                          </label>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.68rem', color: '#6c757d', whiteSpace: 'nowrap' }}># of Cars</span>
+                            <div style={{ width: '65px', borderBottom: '1px solid #495057' }}>
+                              <EditableField
+                                fieldPath={getFieldPath(garageCarsKey || "Garage # of Cars")}
+                                value={renderValue(garageCarsVal)}
+                                onDataChange={onDataChange}
+                                editingField={editingField}
+                                setEditingField={setEditingField}
+                                isEditable={true}
+                                allData={allData}
+                                manualValidations={manualValidations}
+                                handleManualValidation={handleManualValidation}
+                                revisionHandlers={revisionHandlers}
+                                inputClassName="form-control form-control-sm text-center"
+                                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 2px', fontSize: '0.75rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Row 5: [ ] Carport   # of Cars [ 0 ] */}
+                    {(() => {
+                      const { value: csVal } = getImpValue(["Car Storage"]);
+                      const isCarportChecked = checkOptionMatches(csVal, "Carport");
+                      const toggleCarport = () => {
+                        let items = csVal ? String(csVal).split(',').map(s => s.trim()).filter(Boolean) : [];
+                        if (isCarportChecked) {
+                          items = items.filter(i => !checkOptionMatches(i, "Carport"));
+                        } else {
+                          items = items.filter(i => !checkOptionMatches(i, "None"));
+                          items.push("Carport");
+                        }
+                        onDataChange(getFieldPath("Car Storage"), items.join(', '));
+                      };
+                      const { value: carportCarsVal, actualKey: carportCarsKey } = getImpValue(["Carport # of Cars", "Carport Cars"]);
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '2px 0', borderBottom: '1px dashed #e9ecef' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0, minWidth: '75px' }}>
+                            <input type="checkbox" checked={isCarportChecked} onChange={toggleCarport} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Carport</span>
+                          </label>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ fontSize: '0.68rem', color: '#6c757d', whiteSpace: 'nowrap' }}># of Cars</span>
+                            <div style={{ width: '65px', borderBottom: '1px solid #495057' }}>
+                              <EditableField
+                                fieldPath={getFieldPath(carportCarsKey || "Carport # of Cars")}
+                                value={renderValue(carportCarsVal)}
+                                onDataChange={onDataChange}
+                                editingField={editingField}
+                                setEditingField={setEditingField}
+                                isEditable={true}
+                                allData={allData}
+                                manualValidations={manualValidations}
+                                handleManualValidation={handleManualValidation}
+                                revisionHandlers={revisionHandlers}
+                                inputClassName="form-control form-control-sm text-center"
+                                inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 2px', fontSize: '0.75rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Row 6: [ ] Att.   [ ] Det.   [ ] Built-in */}
+                    {(() => {
+                      const { value: attVal, actualKey: attKey } = getImpValue(["Att./Det./Built-in", "Car Storage Att/Det", "Garage Att./Det./Built-in"]);
+                      const { value: csVal } = getImpValue(["Car Storage"]);
+                      const combinedStr = `${attVal} ${csVal}`;
+                      const isAtt = checkOptionMatches(combinedStr, "Att") || checkOptionMatches(combinedStr, "Attached");
+                      const isDet = checkOptionMatches(combinedStr, "Det") || checkOptionMatches(combinedStr, "Detached");
+                      const isBuiltin = checkOptionMatches(combinedStr, "Built-in") || checkOptionMatches(combinedStr, "Built");
+
+                      const setType = (typeVal) => {
+                        onDataChange(getFieldPath(attKey || "Att./Det./Built-in"), typeVal);
+                      };
+
+                      return (
+                        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', marginTop: '4px', paddingTop: '4px' }}>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0 }}>
+                            <input type="checkbox" checked={isAtt} onChange={() => setType(isAtt ? '' : 'Attached')} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Att.</span>
+                          </label>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0 }}>
+                            <input type="checkbox" checked={isDet} onChange={() => setType(isDet ? '' : 'Detached')} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Det.</span>
+                          </label>
+                          <label style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', fontSize: '0.7rem', margin: 0 }}>
+                            <input type="checkbox" checked={isBuiltin} onChange={() => setType(isBuiltin ? '' : 'Built-in')} style={{ margin: 0, width: '13px', height: '13px', cursor: 'pointer' }} />
+                            <span>Built-in</span>
+                          </label>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
               </div>
             </div>
 
+          </div>
+
+          {/* FINISHED AREA ABOVE GRADE & ADDITIONAL FEATURES */}
+          <div style={{ marginTop: '10px', border: '1px solid #ced4da', borderRadius: '4px', padding: '10px 12px', backgroundColor: '#fcfcfc' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '20px', fontSize: '0.78rem', borderBottom: '1px solid #e9ecef', paddingBottom: '10px', marginBottom: '10px' }}>
+              <span style={{ fontWeight: 'bold', color: '#343a40', whiteSpace: 'nowrap', marginRight: '4px' }}>
+                Finished area above grade contains:
+              </span>
+
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ minWidth: '85px', width: '85px', borderBottom: '1.5px solid #495057' }}>
+                  {(() => {
+                    const { value: rawVal, actualKey } = getImpValue(["Finished area above grade Rooms", "Rooms"]);
+                    const targetPath = getFieldPath(actualKey);
+                    return (
+                      <EditableField
+                        fieldPath={targetPath}
+                        value={renderValue(rawVal)}
+                        onDataChange={onDataChange}
+                        editingField={editingField}
+                        setEditingField={setEditingField}
+                        isEditable={true}
+                        allData={allData}
+                        manualValidations={manualValidations}
+                        handleManualValidation={handleManualValidation}
+                        revisionHandlers={revisionHandlers}
+                        inputClassName="form-control form-control-sm text-center"
+                        inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 4px', fontSize: '0.82rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                      />
+                    );
+                  })()}
+                </div>
+                <span style={{ color: '#495057', fontWeight: '500' }}>Rooms</span>
+              </div>
+
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ minWidth: '85px', width: '85px', borderBottom: '1.5px solid #495057' }}>
+                  {(() => {
+                    const { value: rawVal, actualKey } = getImpValue(["Finished area above grade Bedrooms", "Bedrooms"]);
+                    const targetPath = getFieldPath(actualKey);
+                    return (
+                      <EditableField
+                        fieldPath={targetPath}
+                        value={renderValue(rawVal)}
+                        onDataChange={onDataChange}
+                        editingField={editingField}
+                        setEditingField={setEditingField}
+                        isEditable={true}
+                        allData={allData}
+                        manualValidations={manualValidations}
+                        handleManualValidation={handleManualValidation}
+                        revisionHandlers={revisionHandlers}
+                        inputClassName="form-control form-control-sm text-center"
+                        inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 4px', fontSize: '0.82rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                      />
+                    );
+                  })()}
+                </div>
+                <span style={{ color: '#495057', fontWeight: '500' }}>Bedrooms</span>
+              </div>
+
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ minWidth: '85px', width: '85px', borderBottom: '1.5px solid #495057' }}>
+                  {(() => {
+                    const { value: rawVal, actualKey } = getImpValue(["Finished area above grade Bath(s)", "Bath(s)", "Finished area above grade Baths", "Baths"]);
+                    const targetPath = getFieldPath(actualKey);
+                    return (
+                      <EditableField
+                        fieldPath={targetPath}
+                        value={renderValue(rawVal)}
+                        onDataChange={onDataChange}
+                        editingField={editingField}
+                        setEditingField={setEditingField}
+                        isEditable={true}
+                        allData={allData}
+                        manualValidations={manualValidations}
+                        handleManualValidation={handleManualValidation}
+                        revisionHandlers={revisionHandlers}
+                        inputClassName="form-control form-control-sm text-center"
+                        inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 4px', fontSize: '0.82rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                      />
+                    );
+                  })()}
+                </div>
+                <span style={{ color: '#495057', fontWeight: '500' }}>Bath(s)</span>
+              </div>
+
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ minWidth: '120px', width: '120px', borderBottom: '1.5px solid #495057' }}>
+                  {(() => {
+                    const { value: rawVal, actualKey } = getImpValue(["Square Feet of Gross Living Area Above Grade", "Gross Living Area", "Gross Living Area: square feet", "Square Feet of Gross Living Area"]);
+                    const targetPath = getFieldPath(actualKey);
+                    return (
+                      <EditableField
+                        fieldPath={targetPath}
+                        value={renderValue(rawVal)}
+                        onDataChange={onDataChange}
+                        editingField={editingField}
+                        setEditingField={setEditingField}
+                        isEditable={true}
+                        allData={allData}
+                        manualValidations={manualValidations}
+                        handleManualValidation={handleManualValidation}
+                        revisionHandlers={revisionHandlers}
+                        inputClassName="form-control form-control-sm text-center"
+                        inputStyle={{ width: '100%', border: 'none', background: 'transparent', padding: '0 4px', fontSize: '0.82rem', height: 'auto', textAlign: 'center', fontWeight: 'bold' }}
+                      />
+                    );
+                  })()}
+                </div>
+                <span style={{ color: '#495057', fontWeight: '500' }}>Square Feet of Gross Living Area Above Grade</span>
+              </div>
+            </div>
+
+            {/* Additional features */}
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: '12px', fontSize: '0.78rem' }}>
+              <span style={{ fontWeight: 'bold', color: '#343a40', whiteSpace: 'nowrap' }}>
+                Additional features (special energy efficient items, etc.):
+              </span>
+              <div style={{ flexGrow: 1 }}>
+                {(() => {
+                  const { value: rawVal, actualKey } = getImpValue(["Additional features", "Additional features (special energy efficient items, etc.)", "Additional features (special energy efficient items, etc.)."]);
+                  const targetPath = getFieldPath(actualKey);
+                  return (
+                    <EditableField
+                      fieldPath={targetPath}
+                      value={renderValue(rawVal)}
+                      onDataChange={onDataChange}
+                      editingField={editingField}
+                      setEditingField={setEditingField}
+                      isEditable={true}
+                      allData={allData}
+                      manualValidations={manualValidations}
+                      handleManualValidation={handleManualValidation}
+                      revisionHandlers={revisionHandlers}
+                      inputClassName="form-control form-control-sm field-value"
+                      inputStyle={{ width: '100%', border: 'none', borderBottom: '1px solid #dee2e6', background: 'transparent', padding: '0 4px', fontSize: '0.78rem', height: 'auto' }}
+                    />
+                  );
+                })()}
+              </div>
+            </div>
           </div>
 
           {/* SUMMARY COMMENTS AT BOTTOM */}

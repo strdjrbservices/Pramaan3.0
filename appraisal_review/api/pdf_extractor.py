@@ -574,7 +574,7 @@ CATEGORY_SPECIFIC_INSTRUCTIONS = {
         "--- SUBJECT Section Instructions ---\n"
         "1. **'From Type'**: STRICTLY identify the primary appraisal form type and any additional forms present in all the pages the PDF. Scan ALL headers and footers for form numbers ON THE ALL PAGES OF THE REPORT. Combine multiple forms with ' + ' (e.g., '1004 + 1007'). Primary Types: 1004 (URAR), 1073 (Condo), 1025 (Multi-family), 2055 (Exterior), 1004C (Manufactured), 2090, 1075. Additional Types: 1007 (Rent Schedule), 1004D (Update/Completion), 92051, Compliance Inspection. Allowed Values: [1025, 1073, 1004, 1007, 1004D, 2090, 1007, 92051, 2055, As-is + ARV Reports, 203K FHA, 1075, 71A/71B, 1004C, ACE + PDR, Appraisal Version #1, ECR].\n"
         "2. **'ADU File Check'**: If the 'One with Accessory Unit' checkbox is checked, set this value to 'Yes', otherwise 'No'.\n"
-        "2. **'Exposure comment'**: If the 'Exposure comment' is present the value , otherwise 'Not Present'.\n"
+        "2. **'Exposure comment'**: Please find out the comment from the report for the Exposure comment using the wording/keywords 'Exposure', 'expo days', 'exposure time', 'expo', 'time', 'marketing time'. If present extract the full sentence/narrative comment, otherwise 'Not Present'.\n"
         "2. **'Prior service comment'**: If the 'Prior service comment' is present the value , otherwise 'Not Present'.\n"
         "2. **'ANSI'**: If the 'ANSI' is present the value , otherwise 'Not Present'.\n"
         "3. **'Full Address'**: The Full Address validation verifies that the property address, city, state, and ZIP code are consistently present and identical across all pages of the report.If all values match, the system displays “Address verified on all pages.” If any inconsistency is detected, the system identifies and reports the specific page(s) and field(s) where the mismatch occurs. "
@@ -582,14 +582,15 @@ CATEGORY_SPECIFIC_INSTRUCTIONS = {
         "4. **'HOA $'**: If the value is greater than 0, check if 'per year' or 'per month' is selected and include that in the response.\n"
         "5. **'FHA Case No.'**:plz confirm the Format as '000-0000000', otherwise 'Not Present'.\n"
         "6. **'Offered for Sale in Last 12 Months'**: The value must be ONLY 'Yes' or 'No'. Do not include any associated text.\n"
-        "7. **'Smoke detector comment'**:Please find out the comment from the report for the Smoke detector comment.if the comment not found then see the photo are present for the Smoke detector is present or not.\n"
-        "8. **'CO detector comment'**:Please find out the comment from the report for the CO detector comment. if the comment not found then see the photo are present for the CO detector is present or not.\n"
-        "9. **'Water heater double-strapped comment'**:Please find out the comment from the report for the Water heater double-strapped comment. if the comment not found then see the photo are present for the Water heater double-strapped is present or not \n"
+        "7. **'Smoke detector comment'**: Please find out the comment from the report for the Smoke detector comment using the wording/keywords 'Smoke', 'detector', 'detectors', 'alarm'. If the comment is not found in the narrative text, check if photos are present for the Smoke detector (e.g. 'Photo present: Smoke detector (Page X)').\n"
+        "8. **'CO detector comment'**: Please find out the comment from the report for the CO detector comment using the wording/keywords 'carbon', 'co', 'detector', 'detectors', 'monoxide', 'alarm'. If the comment is not found in the narrative text, check if photos are present for the CO detector (e.g. 'Photo present: CO detector (Page X)').\n"
+        "9. **'Water heater double-strapped comment'**: Please find out the comment from the report for the Water heater double-strapped comment using the wording/keywords 'water heater', 'double-strapped', 'strapped', 'strap', 'brace'. If the comment is not found, check if photos are present for the Water heater.\n"
         "10. **'Special Assessments Comment'**: Please find out the comment from the report for the Special Assessments Comment for finding the comment use word 'Assessment'\n"
         "11. **'Occupant Comment'**:Please find out the comment from the report for the Occupant Commentfor finding the comment use the words as Occupied, Owner, Tenant, Vacant, stages of construction, Rent, Rent-Ready, Uninhabitable\n"
         "12. **'Occupant'**: Strictly extract the checked option from ['Owner', 'Tenant', 'Vacant'].\n"
         "13. **'Property Rights Appraised'**: Strictly extract the checked option from ['Fee Simple', 'Leasehold', 'Other'].\n"
         "14. **'Assignment Type'**: Strictly extract the checked option from ['Purchase Transaction', 'Refinance Transaction', 'Other'].\n"
+        "15. **'Appraiser\'s Fee'**: Search all pages of the report for the Appraiser Fee using keywords like 'Appraiser Fee', 'Appraiser\'s Fee', 'Appraisal Fee', 'Total Fee', 'Agreed Fee', 'Fee', 'Invoice Amount' (e.g., 'Appraiser Fee; $525.00 dollars', 'Appraiser Fee: $525.00', 'Fee: $525'). Extract the clean numeric or currency fee amount (e.g. '$525.00' or '525.00'). If not found, output 'Not Disclosed'.\n"
     ),
     "CONTRACT": (
         "--- CONTRACT Section Instructions ---\n"
@@ -659,6 +660,12 @@ CATEGORY_SPECIFIC_INSTRUCTIONS = {
         "2. For choice fields (e.g. Condominium, Cooperative, PUD), return 'Yes' if checked/applicable, 'No' otherwise.\n"
         "3. **'Opinion of Market Value'**: Extract the numeric market value without currency symbols or commas.\n"
         "4. **'Effective Date of Appraisal'**: Format as MM/DD/YYYY."
+    ),
+    "PUD_INFO": (
+        "--- PUD_INFO Section Instructions ---\n"
+        "1. **PUD Information Extraction**: Look at the 'PROJECT INFORMATION FOR PUDs (if applicable)' section on Page 3 of the appraisal form (or Form 1004).\n"
+        "2. **Checkboxes**: For questions like 'Is the developer/builder in control of the Homeowners\\' Association (HOA)?', 'Was the project created by the conversion of existing building(s) into a PUD?', 'Are the units, common elements, and recreation facilities complete?', and 'Are the common elements leased to or by the Homeowners\\' Association?', ONLY return 'Yes' or 'No' IF the corresponding checkbox has an actual mark/check/X inside it. If neither checkbox is checked, return \"\".\n"
+        "3. **Non-PUD Properties**: If the property is NOT a PUD or the PUD section is left blank/unfilled by the appraiser, return empty strings \"\" for all PUD fields. Do NOT invent or default to Yes/No when checkboxes are empty."
     )
 }
 

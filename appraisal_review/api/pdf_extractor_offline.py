@@ -1185,6 +1185,228 @@ def extract_ansi_sentence_from_doc(doc=None, full_doc_text=""):
     return ""
 
 
+def extract_exposure_comment_from_doc(doc=None, full_doc_text=""):
+    """
+    Extracts the Exposure Comment across the entire document
+    using search terms/keywords: 'Exposure', 'expo days', 'exposure time', 'expo', 'time', 'marketing time'.
+    """
+    candidate_texts = []
+    if doc is not None:
+        for page in doc:
+            t = page.get_text("text") or ""
+            candidate_texts.append(t)
+    if not candidate_texts and full_doc_text:
+        candidate_texts.append(full_doc_text)
+
+    exp_patterns = [
+        re.compile(r'\b(?:exposure\s*time|reasonable\s*exposure\s*time|estimated\s*exposure\s*time)\b[^\.\n]*[\.\n]?', re.IGNORECASE),
+        re.compile(r'\b(?:expo\s*days|exposure\s*days|exposure\s*period|marketing\s*and\s*exposure\s*time)\b[^\.\n]*[\.\n]?', re.IGNORECASE),
+        re.compile(r'\b(?:exposure)\b.*?\b(?:days|months|weeks|time|range|market|estimated|typical|opinion)\b[^\.\n]*[\.\n]?', re.IGNORECASE),
+        re.compile(r'\b(?:marketing\s*time)\b.*?\b(?:days|months|weeks|estimated|typical)\b[^\.\n]*[\.\n]?', re.IGNORECASE),
+    ]
+
+    found_sentences = []
+    for txt in candidate_texts:
+        norm_txt = re.sub(r'[\r\n]+', ' ', txt)
+        sentences = re.split(r'(?<=[.?!;])\s+', norm_txt)
+        for s in sentences:
+            s_clean = s.strip()
+            if not s_clean or len(s_clean) < 10:
+                continue
+
+            s_clean_narr = re.sub(r'^(?:ADDITIONAL\s+COMMENTS|COMMENTS|NOTE|APPRAISAL\s+COMMENTS|EXPOSURE\s+TIME|MARKET\s+CONDITIONS)\s*[:\-]\s*', '', s_clean, flags=re.IGNORECASE).strip()
+
+            for pat in exp_patterns:
+                if pat.search(s_clean_narr):
+                    if s_clean_narr not in found_sentences:
+                        found_sentences.append(s_clean_narr)
+                    break
+
+    if found_sentences:
+        return " ".join(found_sentences)
+
+    if full_doc_text:
+        m = re.search(r'([^.?!;\n]*\b(?:exposure\s*time|expo\s*days|reasonable\s*exposure|exposure\s*period|marketing\s*time)\b[^.?!;\n]*[.?!]?)', full_doc_text, re.IGNORECASE)
+        if m:
+            return m.group(1).strip()
+
+    return ""
+
+
+def extract_appraiser_fee_from_doc(doc=None, full_doc_text=""):
+    """
+    Extracts the Appraiser's Fee across all pages of the document
+    searching for keywords: 'Appraiser Fee', 'Appraiser\'s Fee', 'Appraisal Fee', 'Total Fee', 'Agreed Fee', 'Fee', 'Invoice Amount', 'TOTAL DUE', 'FULL RESIDENTIAL APPRAISAL'.
+    """
+    candidate_texts = []
+    if doc is not None:
+        for page in doc:
+            t = page.get_text("text") or ""
+            candidate_texts.append(t)
+    if not candidate_texts and full_doc_text:
+        candidate_texts.append(full_doc_text)
+
+    fee_patterns = [
+        re.compile(r'(?:Appraiser(?:\'s)?\s*Fee|Appraisal\s*Fee|Appraiser\s*Fee)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?', re.IGNORECASE),
+        re.compile(r'(?:Total\s*Fee|Agreed\s*Fee|Professional\s*Fee|Fee\s*Charged|Fee\s*Amount)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?', re.IGNORECASE),
+        re.compile(r'(?:Invoice\s*Amount|Invoice\s*Total|Total\s*Amount\s*Due|TOTAL\s*DUE|Amount\s*Due)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?', re.IGNORECASE),
+        re.compile(r'(?:FULL\s+RESIDENTIAL\s+APPRAISAL|Appraisal\s+of\s+single\s+family\s+home)[^0-9\$\n]{0,35}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?', re.IGNORECASE),
+        re.compile(r'\bFee\b[^0-9\$\n]{0,25}\$?\s*([0-9,]+(?:\.\d{2})?)(?:\s*(?:dollars?|usd))?', re.IGNORECASE),
+    ]
+
+    for txt in candidate_texts:
+        for pat in fee_patterns:
+            m = pat.search(txt)
+            if m and m.group(1):
+                raw_num = m.group(1).replace(",", "").strip()
+                try:
+                    num_val = float(raw_num)
+                    if 50.0 <= num_val <= 25000.0:
+                        return f"${num_val:,.2f}" if "." in m.group(1) else f"${int(num_val):,}"
+                except ValueError:
+                    pass
+
+    return ""
+
+
+def extract_amc_info_from_doc(doc=None, full_doc_text=""):
+    """
+    Extracts AMC Name, AMC License # / Registration #, and AMC Expiration Date across all pages.
+    """
+    amc_name = ""
+    amc_lic = ""
+
+    candidate_texts = []
+    if doc is not None:
+        for page in doc:
+            t = page.get_text("text") or ""
+            candidate_texts.append(t)
+    if not candidate_texts and full_doc_text:
+        candidate_texts.append(full_doc_text)
+
+    for txt in candidate_texts:
+        if not amc_name:
+            m_amc_name = re.search(r'(?:from\s+(?:an\s+)?AMC,?\s*|AMC\s*[:\-]\s*|Appraisal\s+Management\s+Company\s*[:\-]\s*|Client\s+is\s+|received\s+from\s+)([A-Za-z0-9\s,\.\-&]+(?:Appraisal\s+Management\s+Company|AMC|Appraisal\s+Services))', txt, re.IGNORECASE)
+            if m_amc_name:
+                amc_name = m_amc_name.group(1).strip()
+            elif "FASTAPP APPRAISAL MANAGEMENT" in txt.upper():
+                amc_name = "FASTAPP APPRAISAL MANAGEMENT COMPANY"
+            elif "COAST TO COAST APPRAISAL SERVICES" in txt.upper():
+                amc_name = "COAST TO COAST APPRAISAL SERVICES, INC"
+
+        if not amc_lic:
+            m_lic = re.search(r'(?:Registration\s+No\.?|Registration\s+#|AMC\s+License\s*#?|AMC\s+Reg\s*#?)\s*[:\-]?\s*([A-Za-z0-9\.\-]+)', txt, re.IGNORECASE)
+            if m_lic:
+                amc_lic = m_lic.group(1).strip()
+
+    return {
+        "amc_name": amc_name,
+        "amc_license": amc_lic
+    }
+
+
+def extract_smoke_and_carbon_comments_from_doc(doc=None, full_doc_text="", extracted_photos=None):
+    """
+    Extracts comments and photo confirmations for:
+    - Smoke detector comment
+    - CO detector comment
+    - Water heater double-strapped comment
+    Searching for keywords: 'Smoke', 'carbon', 'co', 'detector', 'detectors', 'monoxide', 'strap', 'water heater'.
+    """
+    smoke_comment = ""
+    co_comment = ""
+    wh_comment = ""
+
+    candidate_texts = []
+    if doc is not None:
+        for page in doc:
+            t = page.get_text("text") or ""
+            candidate_texts.append(t)
+    if not candidate_texts and full_doc_text:
+        candidate_texts.append(full_doc_text)
+
+    smoke_sentences = []
+    co_sentences = []
+    wh_sentences = []
+
+    smoke_pat = re.compile(r'\bsmoke\b', re.IGNORECASE)
+    carbon_co_pat = re.compile(r'\b(?:carbon\s*monoxide|co|carbon)\b', re.IGNORECASE)
+    detector_pat = re.compile(r'\b(?:detector|detectors|alarm|alarms|device|devices|operable|installed|present|equipped|observed)\b', re.IGNORECASE)
+    wh_pat = re.compile(r'\b(?:water\s*heater|waterheater)\b', re.IGNORECASE)
+    strap_pat = re.compile(r'\b(?:strap|strapped|strapping|brace|braced|bracing|double[\s\-]strapped|double[\s\-]strap)\b', re.IGNORECASE)
+
+    smoke_co_combined_pat = re.compile(
+        r'\b(?:smoke\s*(?:and|/|&|\+|,)?\s*(?:carbon\s*monoxide|co|carbon)\s*(?:detectors?|alarms?)?|'
+        r'(?:carbon\s*monoxide|co|carbon)\s*(?:and|/|&|\+|,)?\s*smoke\s*(?:detectors?|alarms?)?)\b',
+        re.IGNORECASE
+    )
+
+    for txt in candidate_texts:
+        norm_txt = re.sub(r'[\r\n]+', ' ', txt)
+        sentences = re.split(r'(?<=[.?!;])\s+', norm_txt)
+        for s in sentences:
+            s_clean = s.strip()
+            if not s_clean or len(s_clean) < 8:
+                continue
+
+            s_clean_narr = re.sub(r'^(?:ADDITIONAL\s+COMMENTS|COMMENTS|NOTE|APPRAISAL\s+COMMENTS|SCOPE\s+OF\s+WORK|SUBJECT\s+PROPERTY\s+OBSERVATIONS?|IMPROVEMENTS?\s+COMMENTS?)\s*[:\-]\s*', '', s_clean, flags=re.IGNORECASE).strip()
+
+            # 1. Combined Smoke and CO detector mentions
+            if smoke_co_combined_pat.search(s_clean_narr):
+                if s_clean_narr not in smoke_sentences:
+                    smoke_sentences.append(s_clean_narr)
+                if s_clean_narr not in co_sentences:
+                    co_sentences.append(s_clean_narr)
+                continue
+
+            # 2. Smoke detector mentions
+            if smoke_pat.search(s_clean_narr) and (detector_pat.search(s_clean_narr) or 'smoke' in s_clean_narr.lower()):
+                if s_clean_narr not in smoke_sentences:
+                    smoke_sentences.append(s_clean_narr)
+
+            # 3. Carbon / CO detector mentions
+            if carbon_co_pat.search(s_clean_narr) and (detector_pat.search(s_clean_narr) or 'monoxide' in s_clean_narr.lower() or 'co detector' in s_clean_narr.lower()):
+                if s_clean_narr not in co_sentences:
+                    co_sentences.append(s_clean_narr)
+
+            # 4. Water heater strapping
+            if wh_pat.search(s_clean_narr) and (strap_pat.search(s_clean_narr) or 'heater' in s_clean_narr.lower()):
+                if s_clean_narr not in wh_sentences:
+                    wh_sentences.append(s_clean_narr)
+
+    if smoke_sentences:
+        smoke_comment = " ".join(smoke_sentences)
+    if co_sentences:
+        co_comment = " ".join(co_sentences)
+    if wh_sentences:
+        wh_comment = " ".join(wh_sentences)
+
+    # If comments not found in text narrative, check extracted photo captions
+    if extracted_photos:
+        for photo in extracted_photos:
+            caption = (photo.get("caption") or "").strip()
+            p_no = photo.get("page")
+            cap_lower = caption.lower()
+
+            if not smoke_comment:
+                if "smoke" in cap_lower and any(k in cap_lower for k in ["detector", "alarm", "smoke"]):
+                    smoke_comment = f"Photo present: {caption}" + (f" (Page {p_no})" if p_no else "")
+
+            if not co_comment:
+                if ("carbon" in cap_lower or "co detector" in cap_lower or "co alarm" in cap_lower or "monoxide" in cap_lower or (re.search(r'\bco\b', cap_lower) and "detector" in cap_lower)):
+                    co_comment = f"Photo present: {caption}" + (f" (Page {p_no})" if p_no else "")
+
+            if not wh_comment:
+                if "water heater" in cap_lower or "waterheater" in cap_lower or "strap" in cap_lower:
+                    wh_comment = f"Photo present: {caption}" + (f" (Page {p_no})" if p_no else "")
+
+    return {
+        "smoke_comment": smoke_comment,
+        "co_comment": co_comment,
+        "water_heater_comment": wh_comment
+    }
+
+
 def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     """Extracts clean fields for SUBJECT, CONTRACT, NEIGHBORHOOD, and SITE dynamically."""
     if fitz_page is not None:
@@ -1289,8 +1511,17 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
             occ_val = "Owner"
     subject["Occupant"] = occ_val or ""
 
+    # Occupant Comment
+    occ_comm_m = re.search(r'([^.?!;\n]*\b(?:occupied|owner[\s\-]occupied|tenant[\s\-]occupied|vacant|stages\s+of\s+construction|rent[\s\-]ready|uninhabitable)\b[^.?!;\n]*[.?!]?)', full_doc_text, re.IGNORECASE)
+    subject["Occupant Comment"] = occ_comm_m.group(1).strip() if occ_comm_m else ""
+
     val_sa = get_val(285, y_occ - 4, 385, y_occ + 10)
     subject["Special Assessments $"] = re.sub(r'^(?:Special\s*Assessments\s*\$?\s*[:\-]*\s*)', '', val_sa, flags=re.IGNORECASE).strip()
+
+    # Special Assessments Comment
+    sa_comm_m = re.search(r'([^.?!;\n]*\b(?:special\s*assessments?|assessments?)\b[^.?!;\n]*[.?!]?)', full_doc_text, re.IGNORECASE)
+    subject["Special Assessments Comment"] = sa_comm_m.group(1).strip() if sa_comm_m else ""
+
     pud_yes = is_box_checked(388, y_occ - 4, 405, y_occ + 6, "PUD")
     subject["PUD"] = "Yes" if pud_yes else "No"
     val_hoa = get_val(440, y_occ - 4, 510, y_occ + 10)
@@ -1350,8 +1581,8 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     raw_ds_off = get_val(28, y_offered + 6, 585, y_offered + 38, strip_labels=False)
     subject["Report data source(s) used, offering price(s), and date(s)"] = re.sub(r'^(?:Report\s*data\s*source\(s\)\s*used,?\s*offering\s*price\(s\),?\s*and\s*date\(s\)[\.\:]*\s*)', '', raw_ds_off, flags=re.IGNORECASE).strip()
 
-    exp_m = re.search(r'(exposure time[^\.\n]+[\.\n]|marketing time[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
-    subject["Exposure comment"] = exp_m.group(1).strip() if exp_m else ""
+    exp_val = extract_exposure_comment_from_doc(doc=None, full_doc_text=full_doc_text)
+    subject["Exposure comment"] = exp_val
 
     prior_m = re.search(r'(performed no services[^\.\n]+[\.\n]|within the (?:three|3) year period[^\.\n]+[\.\n])', full_doc_text, re.IGNORECASE)
     subject["Prior service comment"] = prior_m.group(1).strip() if prior_m else ""
@@ -1360,6 +1591,17 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     subject["ANSI"] = ansi_val
     subject["ANSI Standards"] = ansi_val
     subject["ANSI Comment"] = ansi_val
+
+    # Detectors & Water Heater initial scan
+    initial_det = extract_smoke_and_carbon_comments_from_doc(doc=None, full_doc_text=full_doc_text)
+    subject["Smoke detector comment"] = initial_det.get("smoke_comment", "")
+    subject["CO detector comment"] = initial_det.get("co_comment", "")
+    subject["Water heater double-strapped comment"] = initial_det.get("water_heater_comment", "")
+
+    # Appraiser's Fee
+    fee_val = extract_appraiser_fee_from_doc(doc=None, full_doc_text=full_doc_text)
+    subject["Appraiser's Fee"] = fee_val
+    subject["Appraiser Fee"] = fee_val
 
     # CONTRACT
     y_contract = find_label_y(words, "Contract", max_x=120) or 210.0
@@ -2296,6 +2538,9 @@ def extract_page_1_fields(page, full_doc_text="", fitz_page=None):
     if is_box_checked(195, r12_t, 255, r12_b, "Disposal") or is_box_checked(240, r12_t, 265, r12_b, "Disposal"): app_checked.append("Disposal")
     if is_box_checked(245, r12_t, 310, r12_b, "Microwave") or is_box_checked(285, r12_t, 310, r12_b, "Microwave"): app_checked.append("Microwave")
     if is_box_checked(300, r12_t, 365, r12_b, "Washer") or is_box_checked(330, r12_t, 360, r12_b, "Washer"): app_checked.append("Washer/Dryer")
+    if is_box_checked(355, r12_t, 420, r12_b, "Other") or is_box_checked(390, r12_t, 435, r12_b, "Other"):
+        app_other_desc = extract_cell_value(410, r12_t, 588, r12_b, ["Other", "(describe)", "Other (describe)"])
+        app_checked.append(f"Other ({app_other_desc})" if app_other_desc else "Other (describe)")
     imp["Appliances"] = ", ".join(app_checked)
 
     # -------------------------------------------------------------------------
@@ -3409,23 +3654,33 @@ def extract_pud_info_section(page_p3, full_doc_text="", fitz_page=None):
     words = page_p3.extract_words()
     txt = page_p3.extract_text() or ""
     
-    if "PUD INFORMATION" not in txt and "Homeowners' Association" not in txt:
+    if "PUD INFORMATION" not in txt and "Homeowners' Association" not in txt and "PROJECT INFORMATION FOR PUD" not in txt:
         return pud
 
-    def get_pud_choice(kw_pattern, y_fallback):
-        m = re.search(kw_pattern + r'[^\n]*\b(Yes|No)\b', txt, re.IGNORECASE)
-        if m:
-            return m.group(1).capitalize()
+    def get_pud_choice(kw_pattern, y_fallback, opt_yes_kw=["Yes"], opt_no_kw=["No"]):
+        w_matches = [w for w in words if re.search(kw_pattern, w['text'], re.IGNORECASE) and w['top'] > 600]
+        y_center = w_matches[0]['top'] if w_matches else y_fallback
         return extract_choice_from_row(
-            words, y_fallback,
-            [("Yes", ["Yes"], (480, 520)), ("No", ["No"], (520, 560))],
-            x_min=450, x_max=580, default_val="", page=page_p3, fitz_page=fitz_page
+            words, y_center,
+            [("Yes", opt_yes_kw, (400, 500)), ("No", opt_no_kw, (500, 580))],
+            x_min=380, x_max=590, default_val="", page=page_p3, fitz_page=fitz_page
         ) or ""
 
-    pud["Is the developer/builder in control of the Homeowners' Association (HOA)?"] = get_pud_choice(r'developer/builder in control', 780.0)
-    pud["Was the project created by the conversion of existing building(s) into a PUD?"] = get_pud_choice(r'conversion of existing building', 810.0)
-    pud["Are the units, common elements, and recreation facilities complete?"] = get_pud_choice(r'units, common elements.*?complete', 840.0)
-    pud["Are the common elements leased to or by the Homeowners' Association?"] = get_pud_choice(r'common elements leased to or by', 870.0)
+    def get_unit_type(y_fallback=780.0):
+        w_matches = [w for w in words if "unit" in w['text'].lower() and w['top'] > 600]
+        y_center = w_matches[0]['top'] if w_matches else y_fallback
+        return extract_choice_from_row(
+            words, y_center,
+            [("Detached", ["Detached"], (480, 540)), ("Attached", ["Attached"], (540, 600))],
+            x_min=480, x_max=600, default_val="", page=page_p3, fitz_page=fitz_page
+        ) or ""
+
+    pud["Is the developer/builder in control of the Homeowners' Association (HOA)?"] = get_pud_choice(r'developer|builder|control', 780.0)
+    pud["Unit type(s)"] = get_unit_type(780.0)
+    pud["Was the project created by the conversion of existing building(s) into a PUD?"] = get_pud_choice(r'conversion', 810.0)
+    pud["Does the project contain any multi-dwelling units? Yes No Data"] = get_pud_choice(r'multi-dwelling', 840.0)
+    pud["Are the units, common elements, and recreation facilities complete?"] = get_pud_choice(r'recreation|complete', 840.0)
+    pud["Are the common elements leased to or by the Homeowners' Association?"] = get_pud_choice(r'leased', 870.0)
 
     return pud
 
@@ -3539,7 +3794,12 @@ def extract_certification_section(pdf_path, full_doc_text=""):
             lc_email = m.group(1) if m else ""
             cert["Lender/Client Email Address"] = lc_email
             cert["LENDER/CLIENT Email Address"] = lc_email
-            
+
+        # Extract Appraiser Fee across entire document / invoice
+        fee_val = extract_appraiser_fee_from_doc(doc=doc, full_doc_text=full_doc_text)
+        cert["Appraiser's Fee"] = fee_val
+        cert["Appraiser Fee"] = fee_val
+
     return cert
 
 
@@ -5041,6 +5301,58 @@ def clean_appraisal_extracted_data(data):
             data["Subject"]["ANSI Standards"] = ansi_val
             data["Subject"]["ANSI Comment"] = ansi_val
 
+    # 10. Clean & Sync Smoke and CO Detector & Water Heater Comments
+    smoke_val = data.get("Smoke detector comment") or (data.get("SUBJECT", {}).get("Smoke detector comment") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("Subject", {}).get("Smoke detector comment") if isinstance(data.get("Subject"), dict) else "") or ""
+    if smoke_val:
+        data["Smoke detector comment"] = smoke_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["Smoke detector comment"] = smoke_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["Smoke detector comment"] = smoke_val
+
+    co_val = data.get("CO detector comment") or (data.get("SUBJECT", {}).get("CO detector comment") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("Subject", {}).get("CO detector comment") if isinstance(data.get("Subject"), dict) else "") or ""
+    if co_val:
+        data["CO detector comment"] = co_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["CO detector comment"] = co_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["CO detector comment"] = co_val
+
+    wh_val = data.get("Water heater double-strapped comment") or (data.get("SUBJECT", {}).get("Water heater double-strapped comment") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("Subject", {}).get("Water heater double-strapped comment") if isinstance(data.get("Subject"), dict) else "") or ""
+    if wh_val:
+        data["Water heater double-strapped comment"] = wh_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["Water heater double-strapped comment"] = wh_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["Water heater double-strapped comment"] = wh_val
+
+    # 11. Clean & Sync Exposure comment
+    exp_val = data.get("Exposure comment") or data.get("Exposure Comment") or (data.get("SUBJECT", {}).get("Exposure comment") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("SUBJECT", {}).get("Exposure Comment") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("Subject", {}).get("Exposure comment") if isinstance(data.get("Subject"), dict) else "") or ""
+    if exp_val:
+        data["Exposure comment"] = exp_val
+        data["Exposure Comment"] = exp_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["Exposure comment"] = exp_val
+            data["SUBJECT"]["Exposure Comment"] = exp_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["Exposure comment"] = exp_val
+            data["Subject"]["Exposure Comment"] = exp_val
+
+    # 12. Clean & Sync Appraiser's Fee
+    fee_val = data.get("Appraiser's Fee") or data.get("Appraiser Fee") or data.get("Appraisal Fee") or (data.get("SUBJECT", {}).get("Appraiser's Fee") if isinstance(data.get("SUBJECT"), dict) else "") or (data.get("CERTIFICATION", {}).get("Appraiser's Fee") if isinstance(data.get("CERTIFICATION"), dict) else "") or (data.get("Subject", {}).get("Appraiser's Fee") if isinstance(data.get("Subject"), dict) else "") or ""
+    if fee_val:
+        data["Appraiser's Fee"] = fee_val
+        data["Appraiser Fee"] = fee_val
+        if isinstance(data.get("SUBJECT"), dict):
+            data["SUBJECT"]["Appraiser's Fee"] = fee_val
+            data["SUBJECT"]["Appraiser Fee"] = fee_val
+        if isinstance(data.get("CERTIFICATION"), dict):
+            data["CERTIFICATION"]["Appraiser's Fee"] = fee_val
+            data["CERTIFICATION"]["Appraiser Fee"] = fee_val
+        if isinstance(data.get("Subject"), dict):
+            data["Subject"]["Appraiser's Fee"] = fee_val
+            data["Subject"]["Appraiser Fee"] = fee_val
+
     return data
 
 
@@ -5238,6 +5550,57 @@ def extract_fields_from_pdf_offline(pdf_path):
                     data["SUBJECT"]["ANSI"] = ansi_doc_sentence
                     data["SUBJECT"]["ANSI Standards"] = ansi_doc_sentence
                     data["SUBJECT"]["ANSI Comment"] = ansi_doc_sentence
+
+            # Extract Smoke, Carbon/CO, and Water Heater comments across entire document and photos
+            detector_comments = extract_smoke_and_carbon_comments_from_doc(doc=doc, full_doc_text=full_doc_text, extracted_photos=extracted_photos)
+            if detector_comments.get("smoke_comment"):
+                data["Smoke detector comment"] = detector_comments["smoke_comment"]
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["Smoke detector comment"] = detector_comments["smoke_comment"]
+
+            if detector_comments.get("co_comment"):
+                data["CO detector comment"] = detector_comments["co_comment"]
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["CO detector comment"] = detector_comments["co_comment"]
+
+            if detector_comments.get("water_heater_comment"):
+                data["Water heater double-strapped comment"] = detector_comments["water_heater_comment"]
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["Water heater double-strapped comment"] = detector_comments["water_heater_comment"]
+
+            # Extract Exposure comment across entire document
+            exposure_doc_comment = extract_exposure_comment_from_doc(doc=doc, full_doc_text=full_doc_text)
+            if exposure_doc_comment:
+                data["Exposure comment"] = exposure_doc_comment
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["Exposure comment"] = exposure_doc_comment
+
+            # Extract Appraiser's Fee across entire document
+            appraiser_fee_doc = extract_appraiser_fee_from_doc(doc=doc, full_doc_text=full_doc_text)
+            if appraiser_fee_doc:
+                data["Appraiser's Fee"] = appraiser_fee_doc
+                data["Appraiser Fee"] = appraiser_fee_doc
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["Appraiser's Fee"] = appraiser_fee_doc
+                    data["SUBJECT"]["Appraiser Fee"] = appraiser_fee_doc
+                if "CERTIFICATION" in data and isinstance(data["CERTIFICATION"], dict):
+                    data["CERTIFICATION"]["Appraiser's Fee"] = appraiser_fee_doc
+                    data["CERTIFICATION"]["Appraiser Fee"] = appraiser_fee_doc
+
+            # Extract AMC details across entire document
+            amc_info = extract_amc_info_from_doc(doc=doc, full_doc_text=full_doc_text)
+            if amc_info.get("amc_name"):
+                data["AMC Name"] = amc_info["amc_name"]
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["AMC Name"] = amc_info["amc_name"]
+                if "CERTIFICATION" in data and isinstance(data["CERTIFICATION"], dict):
+                    data["CERTIFICATION"]["AMC Name"] = amc_info["amc_name"]
+            if amc_info.get("amc_license"):
+                data["AMC License #"] = amc_info["amc_license"]
+                if "SUBJECT" in data and isinstance(data["SUBJECT"], dict):
+                    data["SUBJECT"]["AMC License #"] = amc_info["amc_license"]
+                if "CERTIFICATION" in data and isinstance(data["CERTIFICATION"], dict):
+                    data["CERTIFICATION"]["AMC License #"] = amc_info["amc_license"]
 
             # Apply Master Sanitization & Clean-up FIRST so signed values and numbers are pristine
             clean_data = clean_appraisal_extracted_data(data)
